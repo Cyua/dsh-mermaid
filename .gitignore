@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tgz
+*.log
+reports.jsonl
+svg-dump/
+.verification/
+.DS_Store
+Thumbs.db

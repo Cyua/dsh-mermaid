@@ -1,0 +1,3 @@
+- insert:
+    - id: mermaid-probe
+      name: '@local/dsh-mermaid-probe'

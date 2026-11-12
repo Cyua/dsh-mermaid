@@ -1,0 +1,8 @@
+# Loader patch that mounts the bundle.
+#
+# `plugin_manager install_bundle` adds the package to the profile and this row
+# to the composed Cordis tree; the Web UI loads the Client half from the
+# package's `./client` export.
+- insert:
+    - id: cyua-mermaid-render
+      name: '@cyua/dsh-mermaid'

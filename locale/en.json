@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Mermaid diagrams",
+    "description": "Renders fenced Mermaid code blocks in the Web UI as inline diagrams, with the source one click away."
+  }
+}

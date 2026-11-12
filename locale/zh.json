@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Mermaid 图表",
+    "description": "把 Web 界面里 Mermaid 代码块直接渲染成图表显示，并可一键切回源码。"
+  }
+}
