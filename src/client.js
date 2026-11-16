@@ -616,6 +616,8 @@ function apply(ctx) {
     scanSignature: '',
     palette: null,
     viewer: null,
+    lazyObserver: null,
+    lazyCheckTimer: 0,
   }
 
   const style = document.createElement('style')
@@ -630,6 +632,12 @@ function apply(ctx) {
   const observer = new MutationObserver(() => scheduleScan(state))
   observer.observe(document.body, { childList: true, subtree: true, characterData: true })
 
+  // Fallback wake-up when intersection updates are paused (occluded desktop
+  // window, throttled renderer): geometry-driven checks on scroll and resize.
+  const onScrollOrResize = () => scheduleLazyCheck(state, 40)
+  document.addEventListener('scroll', onScrollOrResize, { passive: true, capture: true })
+  window.addEventListener('resize', onScrollOrResize)
+
   const offTheme = ctx.on('theme/change', () => rerenderAll(state))
   const offLocale = ctx.on('locale/change', () => {
     for (const [block, record] of state.records) {
@@ -641,6 +649,12 @@ function apply(ctx) {
     return () => {
       state.disposed = true
       observer.disconnect()
+      document.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
+      if (state.lazyCheckTimer) clearTimeout(state.lazyCheckTimer)
+      state.lazyCheckTimer = 0
+      if (state.lazyObserver) state.lazyObserver.disconnect()
+      state.lazyObserver = null
       if (state.scanTimer) clearTimeout(state.scanTimer)
       offTheme()
       offLocale()
@@ -698,6 +712,7 @@ function scan(state) {
   for (const block of blocks) syncBlock(state, block)
   for (const [block, record] of state.records) {
     if (!block.isConnected) {
+      unobserveBlock(state, block)
       cleanupRecord(record)
       state.records.delete(block)
     }
@@ -739,6 +754,8 @@ function syncBlock(state, block) {
       showSiblings(block)
       return
     }
+    // Deferred blocks keep their native code block until they approach the viewport.
+    if (record.deferred) return
     if (!record.figure) ensureFigure(state, block, record)
     else if (!record.figure.isConnected) block.appendChild(record.figure)
     if (!record.sourceMode) hideSiblings(block)
@@ -758,12 +775,140 @@ function syncBlock(state, block) {
       head: detection.code.trim().slice(0, 80),
     })
   }
+  // Never rendered yet? Wait until the block approaches the viewport instead of
+  // paying for mermaid + the contrast audit up front. Deferring is skipped when
+  // intersection cannot be observed, so the plugin still works everywhere.
+  if (!record.figure && deferRecord(state, block, record)) return
+  record.deferred = false
   record.status = 'pending'
   ensureFigure(state, block, record)
   setFigureState(record, 'pending')
   setStatusText(record, '')
   applyDiagramMode(state, block, record)
   scheduleRender(state, record, record.lastRendered ? 140 : 240)
+}
+
+/** How far outside the viewport a block starts rendering. */
+const LAZY_MARGIN_PX = 400
+const LAZY_MARGIN = LAZY_MARGIN_PX + 'px 0px ' + LAZY_MARGIN_PX + 'px 0px'
+
+/**
+ * Viewport-lazy rendering: mark a block as deferred and let an
+ * IntersectionObserver wake it up when it comes within 400 px of the viewport.
+ * The native code block stays untouched meanwhile, so nothing has to be
+ * measured or laid out yet. A geometry fallback (scroll/resize/poll) also
+ * covers renderers where intersection callbacks are paused, such as an
+ * occluded desktop window. Returns false when the platform cannot observe
+ * intersections (the caller then renders eagerly).
+ */
+function deferRecord(state, block, record) {
+  if (typeof IntersectionObserver !== 'function') return false
+  if (!state.lazyObserver) state.lazyObserver = createLazyObserver(state)
+  record.deferred = true
+  record.status = 'deferred'
+  try {
+    state.lazyObserver.observe(block)
+  } catch {
+    record.deferred = false
+    return false
+  }
+  scheduleLazyCheck(state, 60)
+  if (__DSH_MERMAID_DEBUG__) report('lazy-defer', { codeLen: record.code.length })
+  return true
+}
+
+function createLazyObserver(state) {
+  try {
+    return new IntersectionObserver(
+      (entries) => {
+        if (__DSH_MERMAID_DEBUG__) {
+          report('lazy-io', {
+            entries: entries.length,
+            intersecting: entries.filter((entry) => entry.isIntersecting).length,
+          })
+        }
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          const record = state.records.get(entry.target)
+          if (!record || !record.deferred) continue
+          activateDeferred(state, entry.target, record, 'io')
+        }
+      },
+      { rootMargin: LAZY_MARGIN, threshold: 0 },
+    )
+  } catch {
+    return null
+  }
+}
+
+/** Poll the geometry of deferred blocks; also the fallback when IO is paused. */
+function scheduleLazyCheck(state, delay = 120) {
+  if (state.disposed || state.lazyCheckTimer) return
+  state.lazyCheckTimer = setTimeout(() => {
+    state.lazyCheckTimer = 0
+    checkDeferredProximity(state)
+  }, delay)
+}
+
+function checkDeferredProximity(state) {
+  if (state.disposed || state.records.size === 0) return
+  const viewport = window.innerHeight || 800
+  let remaining = 0
+  let near = 0
+  for (const [block, record] of state.records) {
+    if (!record.deferred) continue
+    if (!block.isConnected) continue
+    let close = false
+    try {
+      const rect = block.getBoundingClientRect()
+      close = rect.bottom >= -LAZY_MARGIN_PX && rect.top <= viewport + LAZY_MARGIN_PX
+    } catch {
+      close = true
+    }
+    if (close) {
+      near += 1
+      activateDeferred(state, block, record, 'proximity')
+    } else remaining += 1
+  }
+  if (__DSH_MERMAID_DEBUG__) report('lazy-check', { near, remaining, viewport })
+  if (remaining > 0) scheduleLazyCheck(state, 700)
+}
+
+/** First time a deferred block is near the viewport: build its figure and render. */
+function activateDeferred(state, block, record, source = 'proximity') {
+  if (state.disposed || !record.deferred || !block.isConnected) return
+  try {
+    record.deferred = false
+    unobserveBlock(state, block)
+    record.status = 'pending'
+    record.attempts = 0
+    ensureFigure(state, block, record)
+    setFigureState(record, 'pending')
+    setStatusText(record, '')
+    applyDiagramMode(state, block, record)
+    scheduleRender(state, record, record.lastRendered ? 140 : 240)
+    if (__DSH_MERMAID_DEBUG__) {
+      report('lazy-render', {
+        codeLen: record.code.length,
+        source,
+        top: Math.round(block.getBoundingClientRect().top),
+        viewport: window.innerHeight,
+      })
+    }
+  } catch (error) {
+    if (__DSH_MERMAID_DEBUG__) {
+      report('lazy-activate-error', { message: String((error && error.message) || error).slice(0, 300) })
+    }
+  }
+}
+
+function unobserveBlock(state, block) {
+  if (!state.lazyObserver) return
+  try {
+    state.lazyObserver.unobserve(block)
+  } catch {
+    /* already gone */
+  }
 }
 
 /** Returns `{ content, code, language }` when the block holds a Mermaid fence. */
@@ -1612,6 +1757,7 @@ async function renderRecord(state, record) {
     } else {
       // Give up quietly: restore the untouched code block and wait for a new fence.
       record.status = 'error'
+      unobserveBlock(state, block)
       teardownBlock(block, record)
       if (__DSH_MERMAID_DEBUG__) report('render-dead', { message: String((error && error.message) || error).slice(0, 300) })
     }
@@ -1624,6 +1770,9 @@ function rerenderAll(state) {
   state.initKey = ''
   for (const [block, record] of state.records) {
     if (!block.isConnected || record.status === 'error') continue
+    // Deferred blocks have no DOM yet; they render with the new theme once they
+    // approach the viewport (configureMermaid runs on every render).
+    if (record.deferred) continue
     record.attempts = 0
     record.status = 'pending'
     ensureFigure(state, block, record)
@@ -1647,6 +1796,7 @@ function createRecord(block) {
     attempts: 0,
     timer: 0,
     rendering: false,
+    deferred: false,
     sourceMode: false,
     fitMode: 'fit',
     naturalWidth: 0,

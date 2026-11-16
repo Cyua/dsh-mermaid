@@ -17,6 +17,9 @@ original Mermaid source stays one click away.
 - Large diagrams stay usable: bounded inline height, an *Open full screen* viewer
   with fit-screen / fit-width / actual-size presets, zoom, pan and keyboard
   shortcuts.
+- Viewport-lazy rendering: a diagram is rendered when it comes within 400 px of
+  the viewport, so a long chat history does not pay for every diagram up front —
+  faraway blocks keep their native code block until they approach the view.
 - Localized (English / 中文) through the DSH Client locale service.
 - Streaming-aware: a block that changes while the answer streams re-renders when
   its text settles, and a block that cannot parse falls back to plain code.
@@ -192,6 +195,22 @@ readable text is never touched.
   overflowing child puts its top/left edge beyond the scroll origin and makes the
   start of a zoomed diagram unreachable.
 
+### Lazy rendering
+
+Rendering a diagram means Mermaid parsing/layout plus the contrast audit, and a
+long chat can hold dozens of them. The plugin therefore only renders a block when
+it comes within 400 px of the viewport:
+
+- The block keeps its **native code block** while deferred — nothing is created,
+  measured or laid out yet, so there is no placeholder height to guess.
+- An `IntersectionObserver` (400 px margin) is the primary trigger. Because
+  intersection callbacks pause while the desktop window is occluded or the
+  renderer is throttled, a geometry check on scroll/resize and a short poll act
+  as a fallback, so a block still renders when it becomes visible either way.
+- Once rendered, a diagram stays rendered (scrolling away does not recycle it).
+- A theme switch re-renders the diagrams that are already on screen; deferred
+  blocks render with the current theme when they are activated later.
+
 ### How it works
 
 The Web UI renders Markdown through shared primitives inside its shell bundle.
@@ -240,6 +259,7 @@ build in the dark theme:
 | Subgraph colors | 3-subgraph flowchart → blue/amber/purple in reading order; a `style GROUP fill:` cluster keeps its written color |
 | Participant colors | 4- and 7-participant sequences: actor boxes, stick figure and labels get distinct hues left-to-right (blue, purple, pink, red, amber, green, teal) |
 | Figure chrome | type label, copy/fit/full-screen/source buttons, 34 px toolbar, 16 px radius, rounded shapes (`rx: 9px`), soft drop shadow |
+| Lazy rendering | a block parked far from the viewport keeps its native code block (no figure, no hidden content); moving it within 400 px renders the figure to `ready` and hides the code block; both the `IntersectionObserver` path and the geometry fallback (`source=io` / `source=proximity`) were observed activating blocks |
 
 Known verification limits: the live checks were run in the dark theme; the light
 palette goes through the same token path but was not re-audited.
@@ -255,6 +275,10 @@ palette goes through the same token path but was not re-audited.
   left alone.
 - **Mermaid `box` groups** cannot contain messages in Mermaid 12 (upstream parser
   behavior); only participant declarations belong in a `box`.
+- **Lazy rendering** shows the native code block for blocks more than 400 px away;
+  scrolling faster than a render can finish may briefly show the code block before
+  the diagram replaces it. Blocks far from the viewport are not rendered, so a
+  full-page capture taken without scrolling shows them as code.
 - **Full-screen zoom** is button/keyboard driven; wheel zoom and drag-to-pan are
   not implemented (panning uses the overlay's scrollbars).
 

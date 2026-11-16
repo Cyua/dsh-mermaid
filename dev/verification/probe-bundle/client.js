@@ -221,9 +221,9 @@ window.__ModuleLoader__.load({
       { id: 'flow-custom-style', code: CUSTOM_FLOW },
     ]
 
-    function fakeBlock(code) {
+    function fakeBlock(code, top = 0) {
       const host = document.createElement('div')
-      host.style.cssText = 'position:fixed;left:-30000px;top:0;width:900px;pointer-events:none;'
+      host.style.cssText = 'position:fixed;left:0;top:' + (top || 0) + 'px;width:900px;opacity:0;pointer-events:none;z-index:-1;'
       host.setAttribute('data-probe-host', '1')
       host.innerHTML =
         '<div class="md-code-block">' +
@@ -297,6 +297,29 @@ window.__ModuleLoader__.load({
           true,
         )
         host.remove()
+      }
+      // Viewport-lazy rendering: a block parked far below the viewport must keep
+      // its native code block and render only after it moves near the viewport.
+      if (alive()) {
+        const lazyHost = fakeBlock(GENERIC_FLOW, 2400)
+        await sleep(1800)
+        const content = lazyHost.querySelector('[data-code-block-content]')
+        const before = {
+          figure: Boolean(lazyHost.querySelector('[data-dsh-mermaid-figure]')),
+          nativeVisible: Boolean(content) && !content.hasAttribute('data-dsh-mermaid-hide'),
+          codeBlock: Boolean(lazyHost.querySelector('.md-code-block')),
+        }
+        lazyHost.style.top = '0px'
+        await sleep(2400)
+        const figure = lazyHost.querySelector('[data-dsh-mermaid-figure]')
+        const after = {
+          figure: Boolean(figure),
+          state: figure ? figure.getAttribute('data-state') : '',
+          svg: Boolean(lazyHost.querySelector('.dsh-mermaid-canvas svg')),
+          nativeHidden: Boolean(lazyHost.querySelector('[data-code-block-content][data-dsh-mermaid-hide]')),
+        }
+        post('/report', { event: 'lazy-test', epoch, at: Date.now(), before, after }, true)
+        lazyHost.remove()
       }
       post('/report', { event: 'tests-done', epoch, at: Date.now() }, true)
     }

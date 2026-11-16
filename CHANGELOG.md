@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 — 2026-11-16
+
+- Viewport-lazy rendering: a diagram is rendered only when its block comes within
+  400 px of the viewport; farther blocks keep their native code block, so long
+  chat histories no longer render every diagram on load. An
+  `IntersectionObserver` is the primary trigger, with a scroll/resize/poll
+  geometry fallback for renderers where intersection callbacks are paused.
+  Rendered diagrams are kept (no recycling).
+
 ## 0.3.0 — 2026-11-16
 
 - Sequence diagrams: every `actor` / `participant` now gets its own hue — actor
