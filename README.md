@@ -12,6 +12,8 @@ original Mermaid source stays one click away.
   state, reveal animation and Mermaid's modern `neo` look.
 - Multi-block flowcharts are easier to scan: default `subgraph` groups get
   distinct theme-hued backgrounds and borders, cycled in reading order.
+- Sequence diagrams read faster too: each `actor` / `participant` box, stick
+  figure and label gets its own hue from the same palette.
 - Large diagrams stay usable: bounded inline height, an *Open full screen* viewer
   with fit-screen / fit-width / actual-size presets, zoom, pan and keyboard
   shortcuts.
@@ -154,6 +156,11 @@ The figure is a card that matches the surrounding UI instead of a raw `<svg>`:
   lighter), and their labels are tinted toward the same hue while staying
   readable. Clusters the diagram styles itself (`style GROUP fill:…`,
   `classDef`) are left exactly as written.
+- **Participant colors.** Sequence diagrams use one neutral actor box for every
+  `actor` / `participant`. Each participant is tinted left-to-right from a
+  seven-hue palette (blue, purple, pink, red, amber, green, teal): the actor box
+  or stick figure, its border and its label text all match, and the top/bottom
+  mirror boxes share the same hue.
 
 ### Readability
 
@@ -230,6 +237,8 @@ build in the dark theme:
 | Sequence with `rect rgb(255,247,230)` band, note, `alt` | 18 labels, min contrast **11.75**, 0 failures |
 | State / class / flowchart / pie | 4–9 labels, min contrast 9.25–15.03, 0 failures |
 | Large 6-participant sequence | inline 850×640 inside a 898 px canvas (true fit, no horizontal scrollbar); full screen fit 70%, zoom to 110% with scroll reach to the first row, `Esc` restores the page scroll |
+| Subgraph colors | 3-subgraph flowchart → blue/amber/purple in reading order; a `style GROUP fill:` cluster keeps its written color |
+| Participant colors | 4- and 7-participant sequences: actor boxes, stick figure and labels get distinct hues left-to-right (blue, purple, pink, red, amber, green, teal) |
 | Figure chrome | type label, copy/fit/full-screen/source buttons, 34 px toolbar, 16 px radius, rounded shapes (`rx: 9px`), soft drop shadow |
 
 Known verification limits: the live checks were run in the dark theme; the light

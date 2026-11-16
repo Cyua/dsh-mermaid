@@ -17,9 +17,33 @@ window.__ModuleLoader__.load({
       const r = el.getBoundingClientRect()
       return Math.round(r.width) + 'x' + Math.round(r.height)
     }
+    function actorInfo(svg) {
+      const shapes = []
+      for (const el of (svg ? svg.querySelectorAll('rect.actor[name], g.actor-man[name]') : [])) {
+        const tag = el.tagName.toLowerCase()
+        const style = getComputedStyle(el)
+        const circle = tag === 'g' ? el.querySelector('circle') : null
+        shapes.push({
+          name: el.getAttribute('name'),
+          tag,
+          fill: tag === 'rect' ? style.fill : circle ? getComputedStyle(circle).fill : style.fill,
+          stroke: style.stroke,
+        })
+      }
+      const labels = [...(svg ? svg.querySelectorAll('text.actor') : [])].map((text) => {
+        const box = text.getBoundingClientRect()
+        return {
+          x: Math.round(box.left + box.width / 2),
+          text: (text.textContent || '').trim().slice(0, 12),
+          fill: getComputedStyle(text.querySelector('tspan') || text).fill,
+        }
+      })
+      return { shapes, labels }
+    }
+
     function clusterInfo(svg) {
       const out = []
-      for (const cluster of document.querySelectorAll('.dsh-mermaid-canvas svg g.cluster')) {
+      for (const cluster of (svg ? svg.querySelectorAll('g.cluster') : [])) {
         if (cluster.classList.contains('clusters')) continue
         const rect = cluster.querySelector(':scope > rect') || cluster.querySelector('rect')
         if (!rect) continue
@@ -115,6 +139,50 @@ window.__ModuleLoader__.load({
       return !document.querySelector('.dsh-mermaid-viewer')
     }
 
+    const SMALL_SEQ = [
+      'sequenceDiagram',
+      '    actor U as 用户',
+      '    participant F as 前端',
+      '    participant N as 后端',
+      '    U->>F: 点击',
+      '    F->>N: 请求',
+      '    N-->>F: 响应',
+    ].join(String.fromCharCode(10))
+
+    const BIG_SEQ = [
+      'sequenceDiagram',
+      '    autonumber',
+      '    actor U as 用户',
+      '    participant F as 前端 Web',
+      '    participant N as API 网关',
+      '    participant M as MongoDB',
+      '    participant P as 消息队列',
+      '    participant J as CI Worker',
+      '    participant C as AI Agent',
+      '    U->>F: 点击「继续分析」',
+      '    F->>N: POST /analysis/trigger',
+      '    N->>N: 选 skill + 校验参数',
+      '    N->>M: 读取文档状态',
+      '    alt 文档未就绪',
+      '        N-->>F: accepted=false',
+      '    else 文档就绪',
+      '        N->>M: CAS 抢锁 + 写轮次',
+      '        N->>P: POST /events',
+      '        P->>J: buildWithParameters',
+      '        J->>C: claude -p "/skill"',
+      '        C->>N: GET /analysis/context',
+      '        N-->>C: docs + issues',
+      '        C->>C: 预检 → 抽证据 → 成文',
+      '        C-->>J: claude_result.md',
+      '        J->>P: POST /result',
+      '    end',
+      '    loop 每 10s 轮询',
+      '        F->>N: GET /feature/analysis',
+      '        N->>P: GET /events/id',
+      '        P-->>N: status + result',
+      '    end',
+    ].join(String.fromCharCode(10))
+
     const GENERIC_FLOW = [
       'flowchart TB',
       '    subgraph L1["① 采集层 · collector"]',
@@ -147,6 +215,8 @@ window.__ModuleLoader__.load({
     ].join(String.fromCharCode(10))
 
     const TESTS = [
+      { id: 'seq-small', code: SMALL_SEQ },
+      { id: 'seq-big', code: BIG_SEQ },
       { id: 'flow-subgraphs', code: GENERIC_FLOW },
       { id: 'flow-custom-style', code: CUSTOM_FLOW },
     ]
@@ -154,6 +224,7 @@ window.__ModuleLoader__.load({
     function fakeBlock(code) {
       const host = document.createElement('div')
       host.style.cssText = 'position:fixed;left:-30000px;top:0;width:900px;pointer-events:none;'
+      host.setAttribute('data-probe-host', '1')
       host.innerHTML =
         '<div class="md-code-block">' +
         '<div><div data-code-block-banner><div>mermaid</div></div></div>' +
@@ -166,6 +237,7 @@ window.__ModuleLoader__.load({
 
     let cancelled = false
     async function runTests(epoch) {
+      for (const stale of document.querySelectorAll('[data-probe-host]')) stale.remove()
       const alive = () => !cancelled && window.__dshMermaidProbeEpoch === epoch
       for (const test of TESTS) {
         if (!alive()) return
@@ -221,7 +293,7 @@ window.__ModuleLoader__.load({
 
         post(
           '/report',
-          { event: 'test', id: test.id, epoch, at: Date.now(), clusters: clusterInfo(svg), ui: before, inlineReach, viewerFit, viewerFitReach, viewerZoom, zoomReach, centered, viewerReset, closed, hintViewer, hintClosed },
+          { event: 'test', id: test.id, epoch, at: Date.now(), clusters: clusterInfo(svg), actors: actorInfo(svg), ui: before, inlineReach, viewerFit, viewerFitReach, viewerZoom, zoomReach, centered, viewerReset, closed, hintViewer, hintClosed },
           true,
         )
         host.remove()

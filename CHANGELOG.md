@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 — 2026-11-16
+
+- Sequence diagrams: every `actor` / `participant` now gets its own hue — actor
+  box (or stick figure), border and label are tinted from a seven-color palette
+  assigned left-to-right, so the header row and the messages under it are easy to
+  map together.
+
 ## 0.2.0 — 2026-11-16
 
 - Default flowchart `subgraph` clusters now get distinct theme-hued backgrounds,

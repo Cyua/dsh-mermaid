@@ -1143,6 +1143,35 @@ const MIN_TEXT_CONTRAST = 3.4
 const MIN_SURFACE_CONTRAST = 3.0
 
 /**
+ * Bounding box in the diagram's own coordinate space, unaffected by where the
+ * figure sits on the page (probe figures can be parked far off-screen).
+ */
+function userSpaceBox(element) {
+  try {
+    const box = element.getBBox && element.getBBox()
+    const ctm = element.getCTM && element.getCTM()
+    if (box && ctm) {
+      const corners = [
+        [box.x, box.y],
+        [box.x + box.width, box.y],
+        [box.x, box.y + box.height],
+        [box.x + box.width, box.y + box.height],
+      ].map(([x, y]) => [ctm.a * x + ctm.c * y + ctm.e, ctm.b * x + ctm.d * y + ctm.f])
+      const xs = corners.map((point) => point[0])
+      const ys = corners.map((point) => point[1])
+      const minX = Math.min(...xs)
+      const minY = Math.min(...ys)
+      return { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY }
+    }
+    if (box) return { x: box.x, y: box.y, width: box.width, height: box.height }
+  } catch {
+    /* getBBox/getCTM can throw for detached nodes */
+  }
+  const rect = element.getBoundingClientRect()
+  return { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+}
+
+/**
  * Subgraph (`subgraph … end`) backgrounds all use one neutral cluster color in
  * Mermaid, which makes multi-block flowcharts hard to scan. Default clusters get
  * a distinct hue from the theme tokens, cycled in definition order; clusters the
@@ -1163,11 +1192,11 @@ function decorateClusters(svgElement, palette) {
       const rect = cluster.querySelector(':scope > rect') || cluster.querySelector('rect')
       if (!rect) continue
       stats.clusters += 1
-      candidates.push({ cluster, rect, box: rect.getBoundingClientRect() })
+      candidates.push({ cluster, rect, box: userSpaceBox(rect) })
     }
     // Assign hues in reading order (top-to-bottom, then left-to-right) so the
     // palette follows how the diagram is read rather than mermaid's DOM order.
-    candidates.sort((a, b) => a.box.top - b.box.top || a.box.left - b.box.left)
+    candidates.sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x)
     let hueIndex = 0
     for (const { cluster, rect } of candidates) {
       const fill = cssColor(getComputedStyle(rect).fill)
@@ -1218,6 +1247,92 @@ function mixRgb(a, b, weight) {
     b: Math.round(a.b * weight + b.b * (1 - weight)),
     a: 1,
   }
+}
+
+/**
+ * Sequence-diagram participants all share one neutral actor box. Each
+ * participant gets its own hue (same palette family as clusters) so the header
+ * boxes, their stick figures and labels make the messages easier to follow.
+ */
+const ACTOR_HUES = ['accent', 'purple', 'pink', 'error', 'warn', 'success', 'teal']
+const ACTOR_HUE_FALLBACKS = {
+  pink: { dark: '#f472b6', light: '#db2777' },
+  teal: { dark: '#2dd4bf', light: '#0d9488' },
+}
+
+function actorHueColors(palette) {
+  return ACTOR_HUES.map((key) => {
+    const fromToken = cssColor(palette[key])
+    if (fromToken) return fromToken
+    const fallback = ACTOR_HUE_FALLBACKS[key]
+    return cssColor(fallback ? fallback[palette.dark ? 'dark' : 'light'] : '#7aaaff')
+  }).filter(Boolean)
+}
+
+function decorateActors(svgElement, palette) {
+  const stats = { actors: 0, tinted: 0 }
+  if (!svgElement || !palette) return stats
+  try {
+    const ink = tokenRgb(palette.fg1, palette)
+    const colors = actorHueColors(palette)
+    if (!ink || colors.length === 0) return stats
+    const actors = new Map()
+    const register = (element) => {
+      const name = element.getAttribute('name')
+      if (!name) return
+      const box = userSpaceBox(element)
+      const entry = actors.get(name) || { name, top: Infinity, elements: [], centerX: 0 }
+      entry.top = Math.min(entry.top, box.y)
+      entry.centerX = Math.max(entry.centerX, box.x + box.width / 2)
+      entry.elements.push(element)
+      actors.set(name, entry)
+    }
+    for (const element of svgElement.querySelectorAll('rect.actor[name], g.actor-man[name]')) register(element)
+    if (actors.size === 0) return stats
+    const ordered = [...actors.values()].sort((a, b) => a.centerX - b.centerX || a.top - b.top)
+    const fillAlpha = palette.dark ? 0.16 : 0.12
+    const borderAlpha = palette.dark ? 0.55 : 0.5
+    const labelWeight = palette.dark ? 0.45 : 0.55
+    const labelInks = ordered.map((entry, index) => {
+      const base = colors[index % colors.length]
+      stats.actors += 1
+      stats.tinted += 1
+      const fill = `rgba(${base.r}, ${base.g}, ${base.b}, ${fillAlpha})`
+      const border = `rgba(${base.r}, ${base.g}, ${base.b}, ${borderAlpha})`
+      for (const element of entry.elements) {
+        if (element.tagName.toLowerCase() === 'rect') {
+          element.style.setProperty('fill', fill, 'important')
+          element.style.setProperty('stroke', border, 'important')
+        } else {
+          // `actor` keyword: a stick figure made of lines plus a head circle.
+          element.style.setProperty('stroke', border, 'important')
+          for (const circle of element.querySelectorAll('circle')) {
+            circle.style.setProperty('fill', fill, 'important')
+            circle.style.setProperty('stroke', border, 'important')
+          }
+        }
+      }
+      const labelInk = mixRgb(base, ink, labelWeight)
+      return { centerX: entry.centerX, color: `rgb(${labelInk.r}, ${labelInk.g}, ${labelInk.b})` }
+    })
+    // Color each participant label to match its actor; the nearest box in the
+    // diagram's own coordinate space wins (top and bottom labels both map).
+    for (const text of svgElement.querySelectorAll('text.actor')) {
+      const box = userSpaceBox(text)
+      const centerX = box.x + box.width / 2
+      let best = null
+      for (const label of labelInks) {
+        const distance = Math.abs(centerX - label.centerX)
+        if (!best || distance < best.distance) best = { distance, color: label.color }
+      }
+      if (!best) continue
+      text.style.setProperty('fill', best.color, 'important')
+      for (const tspan of text.querySelectorAll('tspan')) tspan.style.setProperty('fill', best.color, 'important')
+    }
+  } catch {
+    /* actor tinting is decorative and must never break a finished diagram */
+  }
+  return stats
 }
 
 /** Whether two parsed colors match within a small per-channel tolerance. */
@@ -1439,6 +1554,7 @@ async function renderRecord(state, record) {
     let sizing = null
     let repair = null
     let clusters = null
+    let actors = null
     if (svgElement) {
       sizing = applySvgSizing(svgElement, record.canvas, record.fitMode)
       if (sizing) {
@@ -1447,6 +1563,7 @@ async function renderRecord(state, record) {
         record.needsHint = Boolean(sizing.needsHint)
       }
       clusters = decorateClusters(svgElement, state.palette)
+      actors = decorateActors(svgElement, state.palette)
       repair = harmonizeSvg(svgElement, state.palette)
     }
     if (record.figure) record.figure.toggleAttribute('data-tall', Boolean(record.needsHint))
@@ -1472,6 +1589,7 @@ async function renderRecord(state, record) {
         sizing,
         overflow: record.overflowing,
         clusters,
+        actors,
         repair,
       })
       selfTest(block, record)
