@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0 — 2026-11-16
+
+- The full-screen viewer no longer sits under the Windows native caption buttons.
+  Those buttons are Electron's Window Controls Overlay, painted above the page and
+  impossible to cover with CSS, so the viewer reserves the same top clearance DSH
+  uses for its own overlays (`--dsh-frame-top-clearance`, 40 px in the tested
+  build): the panel starts below that row, the toolbar is visible, and dragging
+  the top edge stops there.
+- The viewer toolbar controls are centered in the bar, with the diagram type on
+  the left — clear of the top-right native buttons even on a nearly full-screen
+  panel. The default panel size also respects the reserved row.
+
 ## 0.6.0 — 2026-11-16
 
 - The full-screen viewer leaves less empty space: the overlay gap is now 1vw/1vh

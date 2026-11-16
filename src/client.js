@@ -463,22 +463,32 @@ const CSS = `
   animation: dsh-mermaid-panel-in 0.18s ease both;
 }
 .dsh-mermaid-viewer-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   min-height: 42px;
   padding: 6px 8px 6px 14px;
   border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.06));
 }
+.dsh-mermaid-viewer .dsh-mermaid-brand {
+  min-width: 0;
+}
+.dsh-mermaid-viewer .dsh-mermaid-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .dsh-mermaid-viewer .dsh-mermaid-brand svg {
   width: 16px;
   height: 16px;
 }
 .dsh-mermaid-viewer-controls {
+  grid-column: 2;
+  justify-self: center;
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
 }
 .dsh-mermaid-viewer .dsh-mermaid-action {
   width: 28px;
@@ -2136,13 +2146,6 @@ const VIEWER_SIZE_KEY = 'dsh-mermaid:viewer-size'
 const VIEWER_MIN_WIDTH = 420
 const VIEWER_MIN_HEIGHT = 300
 
-function viewerMaxSize() {
-  return {
-    width: Math.max(VIEWER_MIN_WIDTH, Math.round((window.innerWidth || 1280) * 0.98)),
-    height: Math.max(VIEWER_MIN_HEIGHT, Math.round((window.innerHeight || 800) * 0.98)),
-  }
-}
-
 function viewerViewport() {
   return {
     width: window.innerWidth || 1280,
@@ -2150,16 +2153,72 @@ function viewerViewport() {
   }
 }
 
-/** Gap kept between a resized panel and the window edges (mirrors the overlay padding). */
-function viewerPadding() {
+/**
+ * Windows Electron draws the native caption buttons (minimize / maximize /
+ * close) in a Window Controls Overlay above every page pixel — no CSS z-index
+ * can cover them. DSH marks that layout with `data-windows-titlebar` and
+ * reserves `--dsh-windows-titlebar-height` in its own portalled overlays; the
+ * viewer does the same so its toolbar never sits under the native buttons.
+ */
+function viewerCaptionInset() {
+  try {
+    const root = document.documentElement
+    if (!root) return 0
+    const rootStyle = getComputedStyle(root)
+    // DSH exposes the reserved top clearance for both platforms
+    // (`--dsh-frame-top-clearance`): the Windows caption row or the macOS
+    // traffic-light row.
+    const clearance = parseFloat(rootStyle.getPropertyValue('--dsh-frame-top-clearance'))
+    if (Number.isFinite(clearance) && clearance > 0) return Math.round(clearance)
+    if (!root.hasAttribute('data-windows-titlebar')) return 0
+    let raw = rootStyle.getPropertyValue('--dsh-windows-titlebar-height').trim()
+    if (!raw && document.body) {
+      raw = getComputedStyle(document.body).getPropertyValue('--dsh-windows-titlebar-height').trim()
+    }
+    const px = parseFloat(raw)
+    return Number.isFinite(px) && px > 0 ? Math.round(px) : 42
+  } catch {
+    return 0
+  }
+}
+
+/** Usable gap around the panel (also excludes the native caption row). */
+function viewerInsets() {
   const viewport = viewerViewport()
-  return { x: Math.round(viewport.width * 0.01), y: Math.round(viewport.height * 0.01), width: viewport.width, height: viewport.height }
+  const caption = viewerCaptionInset()
+  return {
+    caption,
+    left: Math.round(viewport.width * 0.01),
+    right: Math.round(viewport.width * 0.01),
+    top: Math.round(viewport.height * 0.01) + caption,
+    bottom: Math.round(viewport.height * 0.01),
+    width: viewport.width,
+    height: viewport.height,
+  }
+}
+
+function viewerMaxSize() {
+  const insets = viewerInsets()
+  return {
+    width: Math.max(VIEWER_MIN_WIDTH, insets.width - insets.left - insets.right),
+    height: Math.max(VIEWER_MIN_HEIGHT, insets.height - insets.top - insets.bottom),
+  }
 }
 
 /** The size the panel has before any manual resize (mirrors the CSS defaults). */
 function viewerDefaultSize() {
-  const viewport = viewerViewport()
-  return clampViewerSize(Math.min(1600, viewport.width * 0.98), Math.min(980, viewport.height * 0.98))
+  const max = viewerMaxSize()
+  return clampViewerSize(Math.min(1600, max.width), Math.min(980, max.height))
+}
+
+/** Overlay padding: 1vw/1vh plus the native caption row on Windows. */
+function applyViewerOverlayInsets(overlay) {
+  if (!overlay) return
+  const insets = viewerInsets()
+  overlay.style.paddingTop = insets.top + 'px'
+  overlay.style.paddingBottom = insets.bottom + 'px'
+  overlay.style.paddingLeft = insets.left + 'px'
+  overlay.style.paddingRight = insets.right + 'px'
 }
 
 function clampViewerSize(width, height) {
@@ -2217,11 +2276,13 @@ function clampViewerPanelSize(state) {
   const rect = panel.getBoundingClientRect()
   const size = setViewerPanelSize(panel, { width: rect.width, height: rect.height })
   if (panel.style.position !== 'fixed') return
-  const pad = viewerPadding()
+  const pad = viewerInsets()
   const left = parseFloat(panel.style.left) || rect.left
   const top = parseFloat(panel.style.top) || rect.top
-  panel.style.left = Math.round(Math.min(Math.max(left, pad.x), Math.max(pad.x, pad.width - pad.x - size.width))) + 'px'
-  panel.style.top = Math.round(Math.min(Math.max(top, pad.y), Math.max(pad.y, pad.height - pad.y - size.height))) + 'px'
+  panel.style.left =
+    Math.round(Math.min(Math.max(left, pad.left), Math.max(pad.left, pad.width - pad.right - size.width))) + 'px'
+  panel.style.top =
+    Math.round(Math.min(Math.max(top, pad.top), Math.max(pad.top, pad.height - pad.bottom - size.height))) + 'px'
 }
 
 const VIEWER_GRIP_AXES = ['e', 'w', 's', 'n', 'se', 'sw', 'ne', 'nw']
@@ -2246,10 +2307,8 @@ function beginViewerResize(state, overlay, panel, event, axis) {
       : 'ns-resize'
   overlay.setAttribute('data-resizing', '')
   overlay.style.cursor = cursor
-  const pad = viewerPadding()
+  const pad = viewerInsets()
   const max = viewerMaxSize()
-  const padX = pad.x
-  const padY = pad.y
   const startRight = start.left + start.width
   const startBottom = start.top + start.height
   let last = null
@@ -2264,17 +2323,17 @@ function beginViewerResize(state, overlay, panel, event, axis) {
     if (axis.includes('e')) {
       width = Math.min(Math.max(start.width + dx, VIEWER_MIN_WIDTH), max.width)
     } else if (axis.includes('w')) {
-      width = Math.max(VIEWER_MIN_WIDTH, Math.min(start.width - dx, max.width, startRight - padX))
+      width = Math.max(VIEWER_MIN_WIDTH, Math.min(start.width - dx, max.width, startRight - pad.left))
       left = startRight - width
     }
     if (axis.includes('s')) {
       height = Math.min(Math.max(start.height + dy, VIEWER_MIN_HEIGHT), max.height)
     } else if (axis.includes('n')) {
-      height = Math.max(VIEWER_MIN_HEIGHT, Math.min(start.height - dy, max.height, startBottom - padY))
+      height = Math.max(VIEWER_MIN_HEIGHT, Math.min(start.height - dy, max.height, startBottom - pad.top))
       top = startBottom - height
     }
-    left = Math.max(Math.min(left, pad.width - padX - width), padX)
-    top = Math.max(Math.min(top, pad.height - padY - height), padY)
+    left = Math.max(Math.min(left, pad.width - pad.right - width), pad.left)
+    top = Math.max(Math.min(top, pad.height - pad.bottom - height), pad.top)
     panel.style.left = Math.round(left) + 'px'
     panel.style.top = Math.round(top) + 'px'
     last = setViewerPanelSize(panel, { width, height })
@@ -2296,11 +2355,10 @@ function beginViewerResize(state, overlay, panel, event, axis) {
 /** Add the edge/corner handles, restore the last size, and wire title-bar maximize. */
 function installViewerResize(state, overlay, panel, bar) {
   try {
-    const stored = readViewerSize()
-    if (stored) {
-      setViewerPanelSize(panel, stored)
-      panel.style.flex = '0 0 auto'
-    }
+    // Always give the panel an explicit size so its default respects the native
+    // caption row (the CSS fallback would start underneath it).
+    setViewerPanelSize(panel, readViewerSize() || viewerDefaultSize())
+    panel.style.flex = '0 0 auto'
   } catch {
     /* fall back to the CSS size */
   }
@@ -2336,12 +2394,14 @@ function toggleViewerMaximized(state, overlay, panel) {
       : viewerDefaultSize()
     : max
   viewer.restoreSize = isMax ? null : { width: rect.width, height: rect.height }
-  const pad = viewerPadding()
+  const pad = viewerInsets()
   anchorViewerPanel(panel)
   const left = Math.round((pad.width - target.width) / 2)
   const top = Math.round((pad.height - target.height) / 2)
-  panel.style.left = Math.round(Math.max(pad.x, Math.min(left, pad.width - pad.x - target.width))) + 'px'
-  panel.style.top = Math.round(Math.max(pad.y, Math.min(top, pad.height - pad.y - target.height))) + 'px'
+  panel.style.left =
+    Math.round(Math.max(pad.left, Math.min(left, pad.width - pad.right - target.width))) + 'px'
+  panel.style.top =
+    Math.round(Math.max(pad.top, Math.min(top, pad.height - pad.bottom - target.height))) + 'px'
   setViewerPanelSize(panel, target)
   storeViewerSize(target)
   setViewerMode(state, viewer.mode || 'fit')
@@ -2413,6 +2473,7 @@ function openViewer(state, record) {
   panel.append(bar, body)
   overlay.append(panel)
   document.body.appendChild(overlay)
+  applyViewerOverlayInsets(overlay)
 
   const previousHtmlOverflow = document.documentElement.style.overflow
   const previousBodyOverflow = document.body.style.overflow
@@ -2441,6 +2502,7 @@ function openViewer(state, record) {
   const onResize = () => {
     const current = state.viewer && state.viewer.__dshMermaidViewer
     if (!current) return
+    applyViewerOverlayInsets(state.viewer)
     clampViewerPanelSize(state)
     setViewerMode(state, current.mode || 'fit')
   }

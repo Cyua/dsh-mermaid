@@ -438,6 +438,71 @@ window.__ModuleLoader__.load({
         )
         host.remove()
       }
+      // Native caption row + centered viewer controls.
+      if (alive()) {
+        const host = fakeBlock(GENERIC_FLOW)
+        await sleep(2600)
+        const figure = host.querySelector('[data-dsh-mermaid-figure]')
+        const expand = figure ? [...figure.querySelectorAll('.dsh-mermaid-action')][2] : null
+        clickNode(expand)
+        await sleep(320)
+        const overlay = document.querySelector('.dsh-mermaid-viewer')
+        const panel = overlay.querySelector('.dsh-mermaid-viewer-panel')
+        const bar = overlay.querySelector('.dsh-mermaid-viewer-bar')
+        const controls = overlay.querySelector('.dsh-mermaid-viewer-controls')
+        bar.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+        await sleep(240)
+        const panelRect = panel.getBoundingClientRect()
+        const barRect = bar.getBoundingClientRect()
+        const controlsRect = controls.getBoundingClientRect()
+        const env = {
+          windowsTitlebar: document.documentElement.hasAttribute('data-windows-titlebar'),
+          platform: document.documentElement.getAttribute('data-platform'),
+          captionVar: getComputedStyle(document.documentElement).getPropertyValue('--dsh-windows-titlebar-height').trim(),
+          overlayPaddingTop: getComputedStyle(overlay).paddingTop,
+          panelTop: Math.round(panelRect.top),
+          panelHeight: Math.round(panelRect.height),
+          viewportHeight: window.innerHeight,
+          controlsCenterOffset: Math.round(controlsRect.left + controlsRect.width / 2 - (barRect.left + barRect.width / 2)),
+          controlsRightGap: Math.round(barRect.right - controlsRect.right),
+        }
+        // Restore a smaller size, then drag the top edge far up: it must stop
+        // below the native caption row instead of sliding under the buttons.
+        bar.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+        await sleep(220)
+        const grip = overlay.querySelector('.dsh-mermaid-viewer-grip[data-axis="n"]')
+        const gripRect = grip.getBoundingClientRect()
+        const startX = Math.round(gripRect.left + gripRect.width / 2)
+        const startY = Math.round(gripRect.top + gripRect.height / 2)
+        grip.dispatchEvent(
+          new PointerEvent('pointerdown', {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            buttons: 1,
+            pointerId: 9,
+            pointerType: 'mouse',
+            clientX: startX,
+            clientY: startY,
+          }),
+        )
+        await sleep(60)
+        window.dispatchEvent(
+          new PointerEvent('pointermove', { bubbles: true, buttons: 1, pointerId: 9, pointerType: 'mouse', clientX: startX, clientY: startY - 400 }),
+        )
+        await sleep(60)
+        window.dispatchEvent(
+          new PointerEvent('pointerup', { bubbles: true, button: 0, pointerId: 9, pointerType: 'mouse', clientX: startX, clientY: startY - 400 }),
+        )
+        await sleep(200)
+        const afterN = {
+          top: Math.round(panel.getBoundingClientRect().top),
+          height: Math.round(panel.getBoundingClientRect().height),
+        }
+        viewerClose()
+        post('/report', { event: 'viewer-caption', epoch, env, afterN }, true)
+        host.remove()
+      }
       post('/report', { event: 'tests-done', epoch, at: Date.now() }, true)
     }
 
