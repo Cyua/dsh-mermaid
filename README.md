@@ -16,7 +16,8 @@ original Mermaid source stays one click away.
   figure and label gets its own hue from the same palette.
 - Large diagrams stay usable: bounded inline height, an *Open full screen* viewer
   with fit-screen / fit-width / actual-size presets, zoom, pan and keyboard
-  shortcuts.
+  shortcuts. The viewer panel is resizable by dragging its edges or corner, and
+  remembers the last size you chose.
 - Viewport-lazy rendering: a diagram is rendered when it comes within 400 px of
   the viewport, so a long chat history does not pay for every diagram up front —
   faraway blocks keep their native code block until they approach the view.
@@ -193,7 +194,12 @@ readable text is never touched.
   Both the card canvas and the viewer body use start-aligned flex with
   `margin: auto` on the SVG rather than flex centering, because a centered
   overflowing child puts its top/left edge beyond the scroll origin and makes the
-  start of a zoomed diagram unreachable.
+  start of a zoomed diagram unreachable. The panel itself is **resizable**: drag
+  the right edge, bottom edge or the corner (a small grip mark sits in the
+  corner); the panel is pinned where it was and grows right/down, clamped to
+  420×300 px minimum and 94vw×94vh maximum. The chosen size is stored in
+  `localStorage` and reopened at that size; the zoom preset re-fits while
+  resizing.
 
 ### Lazy rendering
 
@@ -260,6 +266,7 @@ build in the dark theme:
 | Participant colors | 4- and 7-participant sequences: actor boxes, stick figure and labels get distinct hues left-to-right (blue, purple, pink, red, amber, green, teal) |
 | Figure chrome | type label, copy/fit/full-screen/source buttons, 34 px toolbar, 16 px radius, rounded shapes (`rx: 9px`), soft drop shadow |
 | Lazy rendering | a block parked far from the viewport keeps its native code block (no figure, no hidden content); moving it within 400 px renders the figure to `ready` and hides the code block; both the `IntersectionObserver` path and the geometry fallback (`source=io` / `source=proximity`) were observed activating blocks |
+| Viewer resize | 1602×972 default panel with three grips; dragging the corner by −160×−100 px yields 1444×874 (body 1442×817), stores `{"width":1442,"height":872}`, and reopening restores 1444×874 |
 
 Known verification limits: the live checks were run in the dark theme; the light
 palette goes through the same token path but was not re-audited.

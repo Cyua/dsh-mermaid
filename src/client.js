@@ -451,11 +451,11 @@ const CSS = `
   animation: dsh-mermaid-viewer-in 0.16s ease both;
 }
 .dsh-mermaid-viewer-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: min(1600px, 94vw);
   height: min(980px, 94vh);
-  overflow: hidden;
   border: 1px solid var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12));
   border-radius: var(--dsw-radius-lg, 16px);
   background: var(--dsw-alias-bg-layer-1, #232324);
@@ -499,6 +499,7 @@ const CSS = `
   justify-content: flex-start;
   overflow: auto;
   padding: 24px;
+  border-radius: 0 0 15px 15px;
   background: var(--dsw-alias-bg-base, #151517);
   scrollbar-width: thin;
   scrollbar-color: var(--dsw-alias-scrollbar-bg-l2, rgba(255, 255, 255, 0.18)) transparent;
@@ -509,6 +510,63 @@ const CSS = `
   margin: auto;
   max-width: none;
   height: auto;
+}
+/* Resize affordances: the handles sit just outside the panel so they never cover
+   the viewer's own scrollbars. */
+.dsh-mermaid-viewer-grip {
+  position: absolute;
+  z-index: 4;
+  touch-action: none;
+  border-radius: 4px;
+}
+.dsh-mermaid-viewer-grip[data-axis='x'] {
+  top: 16px;
+  bottom: 16px;
+  right: -7px;
+  width: 14px;
+  cursor: ew-resize;
+}
+.dsh-mermaid-viewer-grip[data-axis='y'] {
+  left: 16px;
+  right: 16px;
+  bottom: -7px;
+  height: 14px;
+  cursor: ns-resize;
+}
+.dsh-mermaid-viewer-grip[data-axis='both'] {
+  right: -7px;
+  bottom: -7px;
+  width: 22px;
+  height: 22px;
+  z-index: 5;
+  cursor: nwse-resize;
+}
+.dsh-mermaid-viewer-grip[data-axis='both']::after {
+  content: '';
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 10px;
+  height: 10px;
+  border-right: 1.5px solid var(--dsw-alias-label-secondary, rgba(255, 255, 255, 0.4));
+  border-bottom: 1.5px solid var(--dsw-alias-label-secondary, rgba(255, 255, 255, 0.4));
+  border-bottom-right-radius: 3px;
+  opacity: 0.55;
+  transition: opacity 0.12s ease;
+}
+.dsh-mermaid-viewer-grip[data-axis='both']:hover::after {
+  opacity: 1;
+}
+.dsh-mermaid-viewer-grip[data-axis='x']:hover,
+.dsh-mermaid-viewer-grip[data-axis='y']:hover,
+.dsh-mermaid-viewer-grip[data-axis='both']:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
+}
+.dsh-mermaid-viewer[data-resizing] {
+  user-select: none;
+}
+.dsh-mermaid-viewer[data-resizing] * {
+  cursor: inherit !important;
 }
 @keyframes dsh-mermaid-viewer-in {
   from {
@@ -2042,6 +2100,135 @@ function viewerButton(icon, label, onClick) {
   return button
 }
 
+const VIEWER_SIZE_KEY = 'dsh-mermaid:viewer-size'
+const VIEWER_MIN_WIDTH = 420
+const VIEWER_MIN_HEIGHT = 300
+
+function viewerMaxSize() {
+  return {
+    width: Math.max(VIEWER_MIN_WIDTH, Math.round((window.innerWidth || 1280) * 0.94)),
+    height: Math.max(VIEWER_MIN_HEIGHT, Math.round((window.innerHeight || 800) * 0.94)),
+  }
+}
+
+function clampViewerSize(width, height) {
+  const max = viewerMaxSize()
+  return {
+    width: Math.round(Math.min(Math.max(width || 0, VIEWER_MIN_WIDTH), max.width)),
+    height: Math.round(Math.min(Math.max(height || 0, VIEWER_MIN_HEIGHT), max.height)),
+  }
+}
+
+function readViewerSize() {
+  try {
+    const raw = window.localStorage.getItem(VIEWER_SIZE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || !Number.isFinite(parsed.width) || !Number.isFinite(parsed.height)) return null
+    return clampViewerSize(parsed.width, parsed.height)
+  } catch {
+    return null
+  }
+}
+
+function storeViewerSize(size) {
+  try {
+    window.localStorage.setItem(VIEWER_SIZE_KEY, JSON.stringify(size))
+  } catch {
+    /* storage may be unavailable; resizing still works for this session */
+  }
+}
+
+function setViewerPanelSize(panel, size) {
+  const clamped = clampViewerSize(size.width, size.height)
+  panel.style.width = clamped.width + 'px'
+  panel.style.height = clamped.height + 'px'
+  panel.style.flex = '0 0 auto'
+  return clamped
+}
+
+/** Pin the panel where it is so growth extends right/down instead of recentring. */
+function anchorViewerPanel(panel) {
+  if (panel.style.position === 'fixed') return
+  const rect = panel.getBoundingClientRect()
+  panel.style.position = 'fixed'
+  panel.style.left = Math.round(rect.left) + 'px'
+  panel.style.top = Math.round(rect.top) + 'px'
+  panel.style.margin = '0'
+  setViewerPanelSize(panel, { width: rect.width, height: rect.height })
+}
+
+/** Keep a manually sized panel inside the window (after a window resize). */
+function clampViewerPanelSize(state) {
+  const viewer = state.viewer && state.viewer.__dshMermaidViewer
+  if (!viewer || !viewer.panel) return
+  const panel = viewer.panel
+  const rect = panel.getBoundingClientRect()
+  const size = setViewerPanelSize(panel, { width: rect.width, height: rect.height })
+  if (panel.style.position !== 'fixed') return
+  const padX = Math.round((window.innerWidth || 1280) * 0.03)
+  const padY = Math.round((window.innerHeight || 800) * 0.03)
+  const left = parseFloat(panel.style.left) || rect.left
+  const top = parseFloat(panel.style.top) || rect.top
+  panel.style.left =
+    Math.round(Math.min(Math.max(left, padX), Math.max(padX, (window.innerWidth || 1280) - padX - size.width))) + 'px'
+  panel.style.top =
+    Math.round(Math.min(Math.max(top, padY), Math.max(padY, (window.innerHeight || 800) - padY - size.height))) + 'px'
+}
+
+function beginViewerResize(state, overlay, panel, event, axis) {
+  if (event.button !== 0) return
+  const viewer = overlay.__dshMermaidViewer
+  if (!viewer) return
+  event.preventDefault()
+  event.stopPropagation()
+  const start = panel.getBoundingClientRect()
+  anchorViewerPanel(panel)
+  const cursor = axis === 'x' ? 'ew-resize' : axis === 'y' ? 'ns-resize' : 'nwse-resize'
+  overlay.setAttribute('data-resizing', '')
+  overlay.style.cursor = cursor
+  let last = null
+  const onMove = (moveEvent) => {
+    if (moveEvent.pointerId != null && event.pointerId != null && moveEvent.pointerId !== event.pointerId) return
+    const width = axis === 'y' ? start.width : start.width + (moveEvent.clientX - event.clientX)
+    const height = axis === 'x' ? start.height : start.height + (moveEvent.clientY - event.clientY)
+    last = setViewerPanelSize(panel, { width, height })
+    setViewerMode(state, viewer.mode || 'fit')
+  }
+  const finish = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', finish)
+    window.removeEventListener('pointercancel', finish)
+    overlay.removeAttribute('data-resizing')
+    overlay.style.cursor = ''
+    if (last) storeViewerSize(last)
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', finish)
+  window.addEventListener('pointercancel', finish)
+}
+
+/** Add the edge/corner handles and restore the last manually chosen size. */
+function installViewerResize(state, overlay, panel) {
+  try {
+    const stored = readViewerSize()
+    if (stored) {
+      setViewerPanelSize(panel, stored)
+      panel.style.flex = '0 0 auto'
+    }
+  } catch {
+    /* fall back to the CSS size */
+  }
+  for (const axis of ['x', 'y', 'both']) {
+    const grip = document.createElement('div')
+    grip.className = 'dsh-mermaid-viewer-grip'
+    grip.setAttribute('data-axis', axis)
+    grip.setAttribute('aria-hidden', 'true')
+    grip.addEventListener('pointerdown', (event) => beginViewerResize(state, overlay, panel, event, axis))
+    panel.appendChild(grip)
+  }
+}
+
 /**
  * A tall diagram cannot fit a chat column at a readable size, so the card keeps
  * a bounded, scrollable preview and this overlay shows the whole diagram fitted
@@ -2131,6 +2318,7 @@ function openViewer(state, record) {
   const onResize = () => {
     const current = state.viewer && state.viewer.__dshMermaidViewer
     if (!current) return
+    clampViewerPanelSize(state)
     setViewerMode(state, current.mode || 'fit')
   }
   window.addEventListener('resize', onResize)
@@ -2142,6 +2330,7 @@ function openViewer(state, record) {
     onResize,
     previousHtmlOverflow,
     previousBodyOverflow,
+    panel,
     body,
     svg,
     zoomLabel,
@@ -2151,6 +2340,7 @@ function openViewer(state, record) {
     mode: 'fit',
   }
   state.viewer = overlay
+  installViewerResize(state, overlay, panel)
   setViewerMode(state, 'fit')
   try {
     close.focus()

@@ -321,6 +321,106 @@ window.__ModuleLoader__.load({
         post('/report', { event: 'lazy-test', epoch, at: Date.now(), before, after }, true)
         lazyHost.remove()
       }
+      // Viewer resize: drag the corner grip, then reopen to check persistence.
+      if (alive()) {
+        let previousSize = null
+        try {
+          previousSize = window.localStorage.getItem('dsh-mermaid:viewer-size')
+          window.localStorage.removeItem('dsh-mermaid:viewer-size')
+        } catch {
+          /* storage unavailable */
+        }
+        const host = fakeBlock(GENERIC_FLOW)
+        await sleep(2600)
+        const figure = host.querySelector('[data-dsh-mermaid-figure]')
+        const expand = figure ? [...figure.querySelectorAll('.dsh-mermaid-action')][2] : null
+        clickNode(expand)
+        await sleep(320)
+        const overlay = document.querySelector('.dsh-mermaid-viewer')
+        const panel = overlay ? overlay.querySelector('.dsh-mermaid-viewer-panel') : null
+        const before = panel
+          ? {
+              width: Math.round(panel.getBoundingClientRect().width),
+              height: Math.round(panel.getBoundingClientRect().height),
+              grips: overlay.querySelectorAll('.dsh-mermaid-viewer-grip').length,
+            }
+          : null
+        let after = null
+        let reopened = null
+        if (panel) {
+          const grip = overlay.querySelector('.dsh-mermaid-viewer-grip[data-axis="both"]')
+          const rect = grip.getBoundingClientRect()
+          const startX = Math.round(rect.left + rect.width / 2)
+          const startY = Math.round(rect.top + rect.height / 2)
+          grip.dispatchEvent(
+            new PointerEvent('pointerdown', {
+              bubbles: true,
+              cancelable: true,
+              button: 0,
+              buttons: 1,
+              pointerId: 7,
+              pointerType: 'mouse',
+              clientX: startX,
+              clientY: startY,
+            }),
+          )
+          await sleep(80)
+          window.dispatchEvent(
+            new PointerEvent('pointermove', {
+              bubbles: true,
+              buttons: 1,
+              pointerId: 7,
+              pointerType: 'mouse',
+              clientX: startX - 160,
+              clientY: startY - 100,
+            }),
+          )
+          await sleep(80)
+          window.dispatchEvent(
+            new PointerEvent('pointerup', {
+              bubbles: true,
+              button: 0,
+              pointerId: 7,
+              pointerType: 'mouse',
+              clientX: startX - 160,
+              clientY: startY - 100,
+            }),
+          )
+          await sleep(220)
+          const body = overlay.querySelector('.dsh-mermaid-viewer-body')
+          const zoom = overlay.querySelector('.dsh-mermaid-viewer-zoom')
+          after = {
+            width: Math.round(panel.getBoundingClientRect().width),
+            height: Math.round(panel.getBoundingClientRect().height),
+            bodyWidth: body ? body.clientWidth : 0,
+            bodyHeight: body ? body.clientHeight : 0,
+            zoom: zoom ? zoom.textContent : '',
+            stored: window.localStorage.getItem('dsh-mermaid:viewer-size'),
+            resizingAttr: overlay.hasAttribute('data-resizing'),
+          }
+          viewerClose()
+          await sleep(160)
+          clickNode(expand)
+          await sleep(280)
+          const overlay2 = document.querySelector('.dsh-mermaid-viewer')
+          const panel2 = overlay2 ? overlay2.querySelector('.dsh-mermaid-viewer-panel') : null
+          reopened = panel2
+            ? {
+                width: Math.round(panel2.getBoundingClientRect().width),
+                height: Math.round(panel2.getBoundingClientRect().height),
+              }
+            : null
+          viewerClose()
+        }
+        try {
+          if (previousSize) window.localStorage.setItem('dsh-mermaid:viewer-size', previousSize)
+          else window.localStorage.removeItem('dsh-mermaid:viewer-size')
+        } catch {
+          /* storage unavailable */
+        }
+        post('/report', { event: 'viewer-resize', epoch, at: Date.now(), before, after, reopened }, true)
+        host.remove()
+      }
       post('/report', { event: 'tests-done', epoch, at: Date.now() }, true)
     }
 

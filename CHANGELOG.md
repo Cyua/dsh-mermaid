@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 — 2026-11-16
+
+- The full-screen viewer can be resized: drag the right edge, bottom edge or the
+  bottom-right corner. The panel is pinned at its current position and grows
+  right/down, clamped to 420×300 px minimum and 94vw×94vh maximum, and the zoom
+  preset re-fits while dragging. The chosen size is remembered in `localStorage`
+  and used the next time the viewer opens.
+
 ## 0.4.0 — 2026-11-16
 
 - Viewport-lazy rendering: a diagram is rendered only when its block comes within
