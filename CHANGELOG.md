@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 — 2026-11-16
+
+- Default flowchart `subgraph` clusters now get distinct theme-hued backgrounds,
+  borders and label tints, cycled in reading order (blue → amber → purple → green
+  → red), so diagrams with several large blocks are easier to scan. Nested
+  clusters use a lighter tint. Clusters with diagram-supplied `style`/`classDef`
+  colors are preserved untouched.
+
 ## 0.1.0 — 2026-11-12
 
 First public release.

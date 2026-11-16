@@ -10,6 +10,8 @@ original Mermaid source stays one click away.
   post-render contrast pass repairs diagram colors that would sink into the card.
 - Designed to sit in the chat: a rounded figure card with a quiet toolbar, hover
   state, reveal animation and Mermaid's modern `neo` look.
+- Multi-block flowcharts are easier to scan: default `subgraph` groups get
+  distinct theme-hued backgrounds and borders, cycled in reading order.
 - Large diagrams stay usable: bounded inline height, an *Open full screen* viewer
   with fit-screen / fit-width / actual-size presets, zoom, pan and keyboard
   shortcuts.
@@ -145,6 +147,13 @@ The figure is a card that matches the surrounding UI instead of a raw `<svg>`:
   from the DSH aliases; 9 px rounded corners on actors, notes, loop labels and
   `rect` sections; accent-tinted notes and activations; 1.1 px connectors; a
   single soft drop shadow instead of Mermaid's hard offset emboss.
+- **Subgraph colors.** Flowchart `subgraph … end` groups all share one neutral
+  cluster fill by default, which makes diagrams with several blocks hard to
+  scan. Untouched clusters get a distinct hue from the theme tokens (blue,
+  amber, purple, green, red — cycled in reading order, nested groups slightly
+  lighter), and their labels are tinted toward the same hue while staying
+  readable. Clusters the diagram styles itself (`style GROUP fill:…`,
+  `classDef`) are left exactly as written.
 
 ### Readability
 

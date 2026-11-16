@@ -17,6 +17,28 @@ window.__ModuleLoader__.load({
       const r = el.getBoundingClientRect()
       return Math.round(r.width) + 'x' + Math.round(r.height)
     }
+    function clusterInfo(svg) {
+      const out = []
+      for (const cluster of document.querySelectorAll('.dsh-mermaid-canvas svg g.cluster')) {
+        if (cluster.classList.contains('clusters')) continue
+        const rect = cluster.querySelector(':scope > rect') || cluster.querySelector('rect')
+        if (!rect) continue
+        const style = getComputedStyle(rect)
+        const inline = rect.getAttribute('style') || ''
+        const label = cluster.querySelector('.cluster-label text, .cluster-label span')
+        const labelStyle = label ? getComputedStyle(label) : null
+        out.push({
+          id: cluster.id || '',
+          fill: style.fill,
+          stroke: style.stroke,
+          inlineFill: /fill\s*:/.test(inline),
+          label: label ? (label.textContent || '').trim().slice(0, 12) : '',
+          labelColor: labelStyle ? (labelStyle.fill && labelStyle.fill !== 'none' ? labelStyle.fill : labelStyle.color) : '',
+        })
+      }
+      return out
+    }
+
     function uiOf(figure) {
       const canvas = figure.querySelector('.dsh-mermaid-canvas')
       const svg = canvas ? canvas.querySelector('svg') : null
@@ -93,44 +115,40 @@ window.__ModuleLoader__.load({
       return !document.querySelector('.dsh-mermaid-viewer')
     }
 
-    const USER_DIAGRAM = [
-      'sequenceDiagram',
-      '    autonumber',
-      '    participant JK as Jenkins',
-      '    participant CI as CI ai_autotest<br/>Jenkinsfile / workflow.py',
-      '    participant NX as Nexus 后端',
-      '    participant DB as MongoDB',
-      '    participant FE as 前端',
-      '    participant CRON as 定时任务<br/>cron 每 5 分钟',
-      '    rect rgb(255,247,230)',
-      '    Note over JK,DB: ③ CI 执行与回传（分钟~小时级）',
-      '    JK->>CI: 启动构建 → Init 阶段',
-      '    CI->>NX: PUT /issue_autotest/running/{autotest_id}',
-      '    NX->>DB: stage=started · 补 running_jenkins',
-      '    alt 派发后又提了新代码',
-      '        CI->>NX: POST /report stage=waiting · passed=false',
-      '        Note over DB: 同一条 autotest_id 5min 后回到调度重排',
-      '    else 版本通过',
-      '        CI->>CI: PrepareSvn → PrepareNaraka → 起服务端 / 客户端',
-      '        NX->>DB: 终态 + result + report + finish_time',
+    const GENERIC_FLOW = [
+      'flowchart TB',
+      '    subgraph L1["① 采集层 · collector"]',
+      '        A1["输入解析"]',
+      '        A2["字段清洗"]',
       '    end',
+      '    subgraph L2["② 处理层 · pipeline"]',
+      '        B1["规则匹配"]',
+      '        B2["结果汇总"]',
       '    end',
-      '    rect rgb(243,236,253)',
-      '    Note over FE,NX: ④ 前端展示（QA 视角）',
-      '    FE->>NX: GET /issue_autotest/queue',
-      '    FE->>NX: POST /issue_autotest/feedback',
+      '    subgraph L3["③ 存储层 · storage"]',
+      '        C1[("缓存")]',
+      '        C2[("数据库")]',
       '    end',
-      '    rect rgb(253,234,234)',
-      '    loop 每 5 分钟',
-      '    CRON->>NX: check_started_autotests()',
-      '    NX->>DB: stage=failure（排队>6h）',
+      '    A2 --> B1 --> C1',
+      '    B1 --> B2',
+      '    B2 --> C2',
+    ].join(String.fromCharCode(10))
+
+    const CUSTOM_FLOW = [
+      'flowchart LR',
+      '    subgraph ONE["显式样式分组"]',
+      '        N1["节点 A"]',
       '    end',
+      '    subgraph TWO["默认样式分组"]',
+      '        N2["节点 B"]',
       '    end',
+      '    style ONE fill:#3a2f1b,stroke:#c99a3d,color:#f5e8c8',
+      '    N1 --> N2',
     ].join(String.fromCharCode(10))
 
     const TESTS = [
-      { id: 'user-big', code: USER_DIAGRAM },
-      { id: 'small', code: ['sequenceDiagram', '  participant A', '  participant B', '  A->>B: 你好'].join(String.fromCharCode(10)) },
+      { id: 'flow-subgraphs', code: GENERIC_FLOW },
+      { id: 'flow-custom-style', code: CUSTOM_FLOW },
     ]
 
     function fakeBlock(code) {
@@ -203,7 +221,7 @@ window.__ModuleLoader__.load({
 
         post(
           '/report',
-          { event: 'test', id: test.id, epoch, at: Date.now(), ui: before, inlineReach, viewerFit, viewerFitReach, viewerZoom, zoomReach, centered, viewerReset, closed, hintViewer, hintClosed },
+          { event: 'test', id: test.id, epoch, at: Date.now(), clusters: clusterInfo(svg), ui: before, inlineReach, viewerFit, viewerFitReach, viewerZoom, zoomReach, centered, viewerReset, closed, hintViewer, hintClosed },
           true,
         )
         host.remove()

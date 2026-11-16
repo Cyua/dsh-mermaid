@@ -1008,6 +1008,7 @@ function resolveTokens(scheme) {
     error: readTokenColor('--dsw-alias-state-error-primary', dark ? '#e5534b' : '#c0392b'),
     success: readTokenColor('--dsw-alias-state-success-primary', dark ? '#3fb950' : '#1a7f37'),
     warn: readTokenColor('--dsw-alias-state-warn-primary', dark ? '#d29922' : '#9a6700'),
+    purple: readTokenColor('--dsw-alias-state-done-primary', dark ? '#a78bfa' : '#7c3aed'),
   }
   // Design tokens may be 8-digit hex or color-mix(); mermaid's own color math
   // expects plain rgb()/rgba(), so normalize every value once here.
@@ -1140,6 +1141,95 @@ function buildThemeVariables(tokens, fontFamily) {
  */
 const MIN_TEXT_CONTRAST = 3.4
 const MIN_SURFACE_CONTRAST = 3.0
+
+/**
+ * Subgraph (`subgraph … end`) backgrounds all use one neutral cluster color in
+ * Mermaid, which makes multi-block flowcharts hard to scan. Default clusters get
+ * a distinct hue from the theme tokens, cycled in definition order; clusters the
+ * diagram author styled themselves are left untouched.
+ */
+const CLUSTER_HUES = ['accent', 'warn', 'purple', 'success', 'error']
+
+function decorateClusters(svgElement, palette) {
+  const stats = { clusters: 0, tinted: 0, skipped: 0, hues: [] }
+  if (!svgElement || !palette) return stats
+  try {
+    const expected = cssColor(withAlpha(palette.fg1, palette.dark ? 0.05 : 0.035))
+    const card = resolveCardBackground(svgElement.closest('[' + ATTR_FIGURE + ']'), palette)
+    const ink = tokenRgb(palette.fg1, palette)
+    const candidates = []
+    for (const cluster of svgElement.querySelectorAll('g.cluster')) {
+      if (cluster.classList.contains('clusters') || cluster.classList.contains('swimlane')) continue
+      const rect = cluster.querySelector(':scope > rect') || cluster.querySelector('rect')
+      if (!rect) continue
+      stats.clusters += 1
+      candidates.push({ cluster, rect, box: rect.getBoundingClientRect() })
+    }
+    // Assign hues in reading order (top-to-bottom, then left-to-right) so the
+    // palette follows how the diagram is read rather than mermaid's DOM order.
+    candidates.sort((a, b) => a.box.top - b.box.top || a.box.left - b.box.left)
+    let hueIndex = 0
+    for (const { cluster, rect } of candidates) {
+      const fill = cssColor(getComputedStyle(rect).fill)
+      // Only untouched clusters keep the theme's neutral cluster fill; anything
+      // the diagram styled explicitly (inline or via a class) is preserved.
+      if (!fill || !expected || !sameRgba(fill, expected, 0.03)) {
+        stats.skipped += 1
+        continue
+      }
+      let depth = 0
+      for (let parent = cluster.parentElement; parent && parent !== svgElement; parent = parent.parentElement) {
+        if (parent.classList && parent.classList.contains('cluster')) depth += 1
+      }
+      const hueKey = CLUSTER_HUES[hueIndex % CLUSTER_HUES.length]
+      const base = tokenRgb(palette[hueKey], palette)
+      if (!base) {
+        stats.skipped += 1
+        continue
+      }
+      hueIndex += 1
+      const falloff = Math.pow(0.7, depth)
+      const fillAlpha = (palette.dark ? 0.13 : 0.1) * falloff
+      const borderAlpha = (palette.dark ? 0.45 : 0.5) * falloff
+      rect.style.setProperty('fill', `rgba(${base.r}, ${base.g}, ${base.b}, ${fillAlpha.toFixed(3)})`, 'important')
+      rect.style.setProperty('stroke', `rgba(${base.r}, ${base.g}, ${base.b}, ${borderAlpha.toFixed(3)})`, 'important')
+      // Tint the cluster label toward the same hue, mixed with the theme ink so
+      // it stays readable on the tinted surface.
+      const labelInk = mixRgb(base, ink, palette.dark ? 0.5 : 0.65)
+      for (const label of cluster.querySelectorAll('.cluster-label text, .cluster-label span')) {
+        label.style.setProperty('fill', `rgb(${labelInk.r}, ${labelInk.g}, ${labelInk.b})`, 'important')
+        label.style.setProperty('color', `rgb(${labelInk.r}, ${labelInk.g}, ${labelInk.b})`, 'important')
+      }
+      stats.tinted += 1
+      const painted = blend(base, card)
+      stats.hues.push(`${hueKey}:${painted.r},${painted.g},${painted.b}`)
+    }
+  } catch {
+    /* cluster tinting is decorative and must never break a finished diagram */
+  }
+  return stats
+}
+
+/** Opaque channel mix: `weight` is how much of `a` is kept. */
+function mixRgb(a, b, weight) {
+  return {
+    r: Math.round(a.r * weight + b.r * (1 - weight)),
+    g: Math.round(a.g * weight + b.g * (1 - weight)),
+    b: Math.round(a.b * weight + b.b * (1 - weight)),
+    a: 1,
+  }
+}
+
+/** Whether two parsed colors match within a small per-channel tolerance. */
+function sameRgba(a, b, tolerance = 0.02) {
+  if (!a || !b) return false
+  return (
+    Math.abs((a.a == null ? 1 : a.a) - (b.a == null ? 1 : b.a)) <= tolerance &&
+    Math.abs(a.r - b.r) <= 3 &&
+    Math.abs(a.g - b.g) <= 3 &&
+    Math.abs(a.b - b.b) <= 3
+  )
+}
 
 function harmonizeSvg(svgElement, palette) {
   const stats = { shapes: 0, repairedShapes: 0, texts: 0, repairedTexts: 0 }
@@ -1348,6 +1438,7 @@ async function renderRecord(state, record) {
     setFigureState(record, 'ready')
     let sizing = null
     let repair = null
+    let clusters = null
     if (svgElement) {
       sizing = applySvgSizing(svgElement, record.canvas, record.fitMode)
       if (sizing) {
@@ -1355,6 +1446,7 @@ async function renderRecord(state, record) {
         record.overflowing = sizing.naturalWidth > sizing.available + 24
         record.needsHint = Boolean(sizing.needsHint)
       }
+      clusters = decorateClusters(svgElement, state.palette)
       repair = harmonizeSvg(svgElement, state.palette)
     }
     if (record.figure) record.figure.toggleAttribute('data-tall', Boolean(record.needsHint))
@@ -1379,6 +1471,7 @@ async function renderRecord(state, record) {
         type: record.type,
         sizing,
         overflow: record.overflowing,
+        clusters,
         repair,
       })
       selfTest(block, record)
