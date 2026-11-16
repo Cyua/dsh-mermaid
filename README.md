@@ -20,6 +20,10 @@ original Mermaid source stays one click away.
   **double-clicking its title bar fills the window** (a second double-click
   restores the previous size); it remembers the last size you chose and stays
   clear of the Windows native caption buttons.
+- **Save as image**: the toolbar and the viewer can export the diagram as a PNG
+  (2× raster with the card background and padding). On Desktop the DSH
+  `fileActions` service opens the native *Save as* dialog and reports the saved
+  path; on Web, or when that service is unavailable, the PNG is downloaded.
 - Viewport-lazy rendering: a diagram is rendered when it comes within 400 px of
   the viewport, so a long chat history does not pay for every diagram up front —
   faraway blocks keep their native code block until they approach the view.
@@ -105,11 +109,14 @@ The rendered figure has a toolbar with:
 - the detected diagram family (`时序图`, `流程图`, `类图`, …),
 - **copy source** (shows a check mark when copied),
 - **actual size / fit width** (only when the diagram is wider than the card),
+- **save as image** (PNG, 2× with the card background),
 - **open full screen**, and
 - **view source / view diagram**.
 
 In the full-screen viewer: `−  100%  +`, *fit screen*, *fit width*,
-*actual size*, close; `Esc` closes, `+`/`-` zoom, `0` fits, scrollbars pan.
+*actual size*, *save as image*, close; `Esc` closes, `+`/`-` zoom, `0` fits,
+scrollbars pan, and the panel can be resized from any edge or corner. On
+Desktop, *save as image* opens the native save dialog; on Web it downloads.
 
 ## Development
 
@@ -237,6 +244,22 @@ readable text is never touched.
   diagram type stays on the left), which keeps them away from the top-right
   native buttons even when the panel is nearly full screen.
 
+### Saving images
+
+The save button serializes the rendered SVG (with `xmlns`, an explicit
+`viewBox`/size, and the `xmlns` on `foreignObject` label wrappers), loads it as
+an `<img>`, and draws it to a 2× canvas padded with 24 px of the card background
+before encoding PNG — so HTML labels and the SVG's own `<style>` survive
+rasterization, and the PNG matches what the card shows. The filename is
+`mermaid-<type>-<timestamp>.png`.
+
+Saving goes through the DSH `fileActions` service when available: a `read`
+callback hands over the PNG blob, `canSaveAs` selects Desktop's native *Save as*
+dialog versus a Web download, `cancelled` produces no toast, and `saved` /
+`requested` show *image saved* / *download started*. Without the service the
+plugin falls back to an anchor download. A failing export shows *could not save
+the image* and logs the error instead of disturbing the diagram.
+
 ### Lazy rendering
 
 Rendering a diagram means Mermaid parsing/layout plus the contrast audit, and a
@@ -303,6 +326,7 @@ build in the dark theme:
 | Figure chrome | type label, copy/fit/full-screen/source buttons, 34 px toolbar, 16 px radius, rounded shapes (`rx: 9px`), soft drop shadow |
 | Lazy rendering | a block parked far from the viewport keeps its native code block (no figure, no hidden content); moving it within 400 px renders the figure to `ready` and hides the code block; both the `IntersectionObserver` path and the geometry fallback (`source=io` / `source=proximity`) were observed activating blocks |
 | Viewer resize | 1602×974 default panel with **8** grips and the caption row reserved (window 1920×1032, caption clearance 40 px, overlay top padding 50 px); corner drag −160×−100 shrinks to 1444×884; left-edge drag widens; bottom-left drag reaches the window padding; **double-click on the bar** fills to 1884×974 and a second double-click restores the previous size; dragging the top edge stops at `top=50` (never under the native buttons); toolbar controls are centered in the bar (offset 3 px) with 826 px to the right edge; the size is stored and reopened |
+| Image export | a rendered 662×289 sequence diagram rasterizes to a 1420×674 PNG (50,117 bytes: 2× + 24 px padding per side, card background, HTML labels included); the save button opened the Desktop native save dialog through `fileActions` (blob source) and the fallback anchor download is used when the service is absent |
 
 Known verification limits: the live checks were run in the dark theme; the light
 palette goes through the same token path but was not re-audited.

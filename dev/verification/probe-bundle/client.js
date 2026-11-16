@@ -131,6 +131,13 @@ window.__ModuleLoader__.load({
         return false
       }
     }
+    function openViewer(figure) {
+      const canvas = figure ? figure.querySelector('.dsh-mermaid-canvas') : null
+      if (!canvas) return false
+      canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      return true
+    }
+
     function sleep(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms))
     }
@@ -236,13 +243,25 @@ window.__ModuleLoader__.load({
     }
 
     let cancelled = false
+    async function waitForFigure(host, timeout = 12000) {
+      const started = Date.now()
+      while (Date.now() - started < timeout) {
+        const figure = host.querySelector('[data-dsh-mermaid-figure]')
+        const svg = figure ? figure.querySelector('.dsh-mermaid-canvas svg') : null
+        if (figure && svg) return { figure, svg }
+        await sleep(250)
+      }
+      const figure = host.querySelector('[data-dsh-mermaid-figure]')
+      return { figure, svg: null }
+    }
+
     async function runTests(epoch) {
       for (const stale of document.querySelectorAll('[data-probe-host]')) stale.remove()
       const alive = () => !cancelled && window.__dshMermaidProbeEpoch === epoch
       for (const test of TESTS) {
         if (!alive()) return
         const host = fakeBlock(test.code)
-        await sleep(3600)
+        await waitForFigure(host, 12000)
         if (!alive()) {
           host.remove()
           return
@@ -258,9 +277,8 @@ window.__ModuleLoader__.load({
         const before = uiOf(figure)
         const inlineReach = topReach(figure.querySelector('.dsh-mermaid-canvas'))
         const figureButtons = [...figure.querySelectorAll('.dsh-mermaid-action')]
-        const expand = figureButtons[2]
 
-        clickNode(expand)
+        openViewer(figure)
         await sleep(220)
         const viewerFit = viewerInfo()
         const viewerFitReach = topReach(document.querySelector('.dsh-mermaid-viewer-body'))
@@ -331,10 +349,9 @@ window.__ModuleLoader__.load({
           /* storage unavailable */
         }
         const host = fakeBlock(GENERIC_FLOW)
-        await sleep(2600)
+        await waitForFigure(host, 12000)
         const figure = host.querySelector('[data-dsh-mermaid-figure]')
-        const expand = figure ? [...figure.querySelectorAll('.dsh-mermaid-action')][2] : null
-        clickNode(expand)
+        openViewer(figure)
         await sleep(320)
         const overlay = document.querySelector('.dsh-mermaid-viewer')
         const panel = overlay ? overlay.querySelector('.dsh-mermaid-viewer-panel') : null
@@ -416,7 +433,7 @@ window.__ModuleLoader__.load({
           stored = window.localStorage.getItem('dsh-mermaid:viewer-size')
           viewerClose()
           await sleep(160)
-          clickNode(expand)
+          openViewer(figure)
           await sleep(280)
           const overlay2 = document.querySelector('.dsh-mermaid-viewer')
           const panel2 = overlay2 ? overlay2.querySelector('.dsh-mermaid-viewer-panel') : null
@@ -441,10 +458,9 @@ window.__ModuleLoader__.load({
       // Native caption row + centered viewer controls.
       if (alive()) {
         const host = fakeBlock(GENERIC_FLOW)
-        await sleep(2600)
+        await waitForFigure(host, 12000)
         const figure = host.querySelector('[data-dsh-mermaid-figure]')
-        const expand = figure ? [...figure.querySelectorAll('.dsh-mermaid-action')][2] : null
-        clickNode(expand)
+        openViewer(figure)
         await sleep(320)
         const overlay = document.querySelector('.dsh-mermaid-viewer')
         const panel = overlay.querySelector('.dsh-mermaid-viewer-panel')
@@ -501,6 +517,31 @@ window.__ModuleLoader__.load({
         }
         viewerClose()
         post('/report', { event: 'viewer-caption', epoch, env, afterN }, true)
+        host.remove()
+      }
+      // Image export: rasterize a ready diagram to PNG through the debug hook.
+      if (alive()) {
+        const host = fakeBlock(GENERIC_FLOW)
+        await waitForFigure(host, 12000)
+        const figure = host.querySelector('[data-dsh-mermaid-figure]')
+        const actions = figure ? figure.querySelectorAll('.dsh-mermaid-actions button') : []
+        let result = null
+        try {
+          result = await window.__dshMermaidDebug.exportFirstReady()
+        } catch (error) {
+          result = { error: String(error && error.message ? error.message : error) }
+        }
+        post(
+          '/report',
+          {
+            event: 'image-export',
+            epoch,
+            toolbarButtons: actions.length,
+            saveTitle: actions.length ? actions[2].title : '',
+            result,
+          },
+          true,
+        )
         host.remove()
       }
       post('/report', { event: 'tests-done', epoch, at: Date.now() }, true)

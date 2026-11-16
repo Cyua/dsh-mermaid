@@ -52,6 +52,10 @@ const EN_DICT = {
   viewDiagram: 'View diagram',
   copySource: 'Copy source',
   copied: 'Copied',
+  saveImage: 'Save as image',
+  imageSaved: 'Image saved',
+  imageDownloadStarted: 'Image download started',
+  imageSaveFailed: 'Could not save the image',
   fitWidth: 'Fit width',
   naturalSize: 'Actual size',
   expand: 'Open full screen',
@@ -92,6 +96,10 @@ const ZH_DICT = {
   viewDiagram: '查看图表',
   copySource: '复制源码',
   copied: '已复制',
+  saveImage: '另存为图片',
+  imageSaved: '图片已保存',
+  imageDownloadStarted: '已开始下载图片',
+  imageSaveFailed: '图片保存失败',
   fitWidth: '适应宽度',
   naturalSize: '原始大小',
   expand: '全屏查看',
@@ -152,6 +160,8 @@ const ICON_MINUS =
   '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 8h8.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>'
 const ICON_FIT_WIDTH =
   '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.3 4.4v7.2M13.7 4.4v7.2M4.7 8h6.6M4.7 8l1.7-1.7M4.7 8l1.7 1.7M11.3 8l-1.7-1.7M11.3 8l-1.7 1.7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+const ICON_IMAGE =
+  '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2.4" width="12" height="8.8" rx="2.1" stroke="currentColor" stroke-width="1.3"/><path d="m4.2 9.6 2.5-3 1.8 2 1.5-1.6 2.2 2.6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5.6" cy="5.3" r=".8" fill="currentColor"/><path d="M11 12.6v2.2M9.9 13.7l1.1 1.1 1.1-1.1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 
 const TYPE_MATCHERS = [
   [/^(?:graph|flowchart)\b/, 'flowchart'],
@@ -781,9 +791,23 @@ function apply(ctx) {
     report('apply', {
       theme: hasService(ctx, 'theme'),
       locale: hasService(ctx, 'locale'),
+      fileActions: hasService(ctx, 'fileActions'),
       scheme: currentColorScheme(ctx),
       ua: typeof navigator === 'undefined' ? '' : String(navigator.userAgent).slice(0, 120),
     })
+    window.__dshMermaidDebug = {
+      async exportFirstReady() {
+        for (const record of state.records.values()) {
+          if (record.status !== 'ready') continue
+          const svg = record.canvas ? record.canvas.querySelector('svg') : null
+          if (!svg) continue
+          const background = state.palette && state.palette.bg1 ? state.palette.bg1 : '#1b1c1f'
+          const png = await renderDiagramPng(svg, background)
+          return { bytes: png.blob.size, width: png.width, height: png.height, type: png.blob.type }
+        }
+        return { error: 'no-ready-diagram' }
+      },
+    }
   }
 }
 
@@ -792,6 +816,14 @@ function hasService(ctx, name) {
     return Boolean(ctx.get(name))
   } catch {
     return false
+  }
+}
+
+function readService(ctx, name) {
+  try {
+    return typeof ctx.get === 'function' ? ctx.get(name) : null
+  } catch {
+    return null
   }
 }
 
@@ -1909,9 +1941,12 @@ function createRecord(block) {
     toggle: null,
     copyButton: null,
     fitButton: null,
+    exportButton: null,
     expandButton: null,
     tallHint: null,
     copyTimer: 0,
+    statusTimer: 0,
+    exporting: false,
     pending: null,
     needsHint: false,
   }
@@ -1967,6 +2002,9 @@ function ensureFigure(state, block, record) {
   fitButton.hidden = true
   fitButton.setAttribute('aria-pressed', 'false')
 
+  const exportButton = iconButton(ICON_IMAGE, state.t('saveImage'), () => saveDiagramImage(state, record))
+  exportButton.hidden = true
+
   const expandButton = iconButton(ICON_EXPAND, state.t('expand'), () => openViewer(state, record))
 
   const tallHint = document.createElement('button')
@@ -1981,7 +2019,7 @@ function ensureFigure(state, block, record) {
   })
   toggle.hidden = true
 
-  actions.append(copyButton, fitButton, expandButton, toggle)
+  actions.append(copyButton, fitButton, exportButton, expandButton, toggle)
   bar.append(brand, statusText, actions)
 
   const canvas = document.createElement('div')
@@ -2005,6 +2043,7 @@ function ensureFigure(state, block, record) {
   record.toggle = toggle
   record.copyButton = copyButton
   record.fitButton = fitButton
+  record.exportButton = exportButton
   record.expandButton = expandButton
   record.tallHint = tallHint
   record.pending = pending
@@ -2026,6 +2065,143 @@ function updateFitButton(state, record) {
   record.fitButton.title = natural ? state.t('fitWidth') : state.t('naturalSize')
   record.fitButton.setAttribute('aria-label', record.fitButton.title)
   record.fitButton.setAttribute('aria-pressed', natural ? 'true' : 'false')
+}
+
+const IMAGE_EXPORT_SCALE = 2
+const IMAGE_EXPORT_PADDING = 24
+
+/** The user-space box the SVG draws into, used to size the exported image. */
+function diagramExportBox(svg) {
+  const box = svg.viewBox && svg.viewBox.baseVal
+  if (box && box.width > 0 && box.height > 0) {
+    return { x: box.x, y: box.y, width: box.width, height: box.height }
+  }
+  try {
+    const bbox = svg.getBBox()
+    if (bbox.width > 0 && bbox.height > 0) {
+      return { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height }
+    }
+  } catch {
+    /* fall through to the laid-out size */
+  }
+  const rect = svg.getBoundingClientRect()
+  return { x: 0, y: 0, width: rect.width, height: rect.height }
+}
+
+function loadImageElement(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('SVG could not be rasterized'))
+    image.src = url
+  })
+}
+
+/** Rasterize the rendered diagram (with its card background) to a PNG blob. */
+async function renderDiagramPng(svg, background) {
+  const box = diagramExportBox(svg)
+  if (!box.width || !box.height) throw new Error('empty diagram')
+  const clone = svg.cloneNode(true)
+  clone.removeAttribute('style')
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+  clone.setAttribute('viewBox', `${box.x} ${box.y} ${box.width} ${box.height}`)
+  clone.setAttribute('width', String(box.width))
+  clone.setAttribute('height', String(box.height))
+  clone.querySelectorAll('foreignObject div').forEach((node) => {
+    if (!node.getAttribute('xmlns')) node.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml')
+  })
+  const source = new XMLSerializer().serializeToString(clone)
+  const svgUrl = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }))
+  try {
+    const image = await loadImageElement(svgUrl)
+    const pad = IMAGE_EXPORT_PADDING
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil((box.width + pad * 2) * IMAGE_EXPORT_SCALE)
+    canvas.height = Math.ceil((box.height + pad * 2) * IMAGE_EXPORT_SCALE)
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('canvas unavailable')
+    context.scale(IMAGE_EXPORT_SCALE, IMAGE_EXPORT_SCALE)
+    context.fillStyle = background || '#1b1c1f'
+    context.fillRect(0, 0, box.width + pad * 2, box.height + pad * 2)
+    context.drawImage(image, pad, pad, box.width, box.height)
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((value) => (value ? resolve(value) : reject(new Error('PNG encoding failed'))), 'image/png')
+    })
+    return { blob, width: canvas.width, height: canvas.height }
+  } finally {
+    URL.revokeObjectURL(svgUrl)
+  }
+}
+
+function diagramImageName(record) {
+  const type = String(record.type || 'diagram').replace(/[^a-z0-9-]/gi, '') || 'diagram'
+  const now = new Date()
+  const pad = (value) => String(value).padStart(2, '0')
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+  return `mermaid-${type}-${stamp}.png`
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.rel = 'noopener'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+}
+
+/**
+ * Save the diagram as a PNG: Desktop opens the native "save as" dialog through
+ * the `fileActions` service; without that service (or on Web) it downloads.
+ */
+async function saveDiagramImage(state, record, button) {
+  if (record.exporting) return
+  const svg = record.canvas ? record.canvas.querySelector('svg') : null
+  if (!svg) return
+  const target = button || record.exportButton
+  record.exporting = true
+  if (record.exportButton) record.exportButton.disabled = true
+  if (target && target !== record.exportButton) target.disabled = true
+  try {
+    const background = state.palette && state.palette.bg1 ? state.palette.bg1 : '#1b1c1f'
+    const png = await renderDiagramPng(svg, background)
+    const filename = diagramImageName(record)
+    if (__DSH_MERMAID_DEBUG__) {
+      report('image-export', { bytes: png.blob.size, width: png.width, height: png.height })
+    }
+    const fileActions = readService(state.ctx, 'fileActions')
+    if (fileActions && typeof fileActions.save === 'function') {
+      const mode = fileActions.canSaveAs === true ? 'saveAs' : 'download'
+      const result = await fileActions.save(
+        { read: () => Promise.resolve(png.blob), name: filename, mediaType: 'image/png' },
+        mode,
+      )
+      if (result && result.status === 'saved') setStatusText(record, state.t('imageSaved'))
+      else if (result && result.status === 'requested') setStatusText(record, state.t('imageDownloadStarted'))
+      else if (!result || result.status !== 'cancelled') setStatusText(record, state.t('imageDownloadStarted'))
+      if (__DSH_MERMAID_DEBUG__) {
+        report('image-export-save', { mode, status: result ? result.status : 'none' })
+      }
+    } else {
+      downloadBlob(png.blob, filename)
+      setStatusText(record, state.t('imageDownloadStarted'))
+      if (__DSH_MERMAID_DEBUG__) report('image-export-save', { mode: 'anchor', status: 'requested' })
+    }
+  } catch (error) {
+    setStatusText(record, state.t('imageSaveFailed'))
+    if (__DSH_MERMAID_DEBUG__) {
+      report('image-export-failed', { message: error && error.message ? error.message : String(error) })
+    }
+    console.warn('[dsh-mermaid] image export failed', error)
+  } finally {
+    record.exporting = false
+    if (record.exportButton) record.exportButton.disabled = false
+    if (target && target !== record.exportButton) target.disabled = false
+  }
 }
 
 function updateLabels(state, record) {
@@ -2055,6 +2231,12 @@ function updateLabels(state, record) {
     record.expandButton.setAttribute('aria-label', state.t('expand'))
     record.expandButton.hidden = record.status !== 'ready'
   }
+  if (record.exportButton) {
+    record.exportButton.title = state.t('saveImage')
+    record.exportButton.setAttribute('aria-label', state.t('saveImage'))
+    record.exportButton.hidden = record.status !== 'ready'
+    record.exportButton.disabled = record.exporting
+  }
   if (record.tallHint) {
     const label = record.tallHint.querySelector('span')
     if (label) label.textContent = state.t('expand')
@@ -2071,12 +2253,23 @@ function setStatusText(record, text) {
   if (!record.statusText) return
   record.statusText.textContent = text || ''
   record.statusText.hidden = !text
+  if (record.statusTimer) {
+    clearTimeout(record.statusTimer)
+    record.statusTimer = 0
+  }
+  if (text) {
+    record.statusTimer = setTimeout(() => {
+      record.statusTimer = 0
+      setStatusText(record, '')
+    }, 2600)
+  }
 }
 
 function setFigureState(record, status) {
   if (record.figure) record.figure.setAttribute('data-state', status)
   if (record.toggle) record.toggle.hidden = status !== 'ready'
   if (status !== 'ready' && record.fitButton) record.fitButton.hidden = true
+  if (status !== 'ready' && record.exportButton) record.exportButton.hidden = true
   if (status !== 'ready' && record.expandButton) record.expandButton.hidden = true
   if (status !== 'ready' && record.tallHint) record.tallHint.hidden = true
 }
@@ -2455,8 +2648,11 @@ function openViewer(state, record) {
   const fitScreen = viewerButton(ICON_FIT, state.t('fitScreen'), () => setViewerMode(state, 'fit'))
   const fitWidth = viewerButton(ICON_FIT_WIDTH, state.t('fitWidth'), () => setViewerMode(state, 'width'))
   const actual = viewerButton(ICON_NATURAL, state.t('naturalSize'), () => setViewerMode(state, 'actual'))
+  const saveImage = viewerButton(ICON_IMAGE, state.t('saveImage'), () =>
+    saveDiagramImage(state, record, saveImage),
+  )
   const close = viewerButton(ICON_CLOSE, state.t('close'), () => closeViewer(state))
-  controls.append(zoomOut, zoomLabel, zoomIn, fitScreen, fitWidth, actual, close)
+  controls.append(zoomOut, zoomLabel, zoomIn, fitScreen, fitWidth, actual, saveImage, close)
   bar.append(brand, controls)
 
   const body = document.createElement('div')

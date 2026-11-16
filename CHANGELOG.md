@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0 — 2026-11-16
+
+- Add **Save as image** to the diagram toolbar and the full-screen viewer. The
+  diagram is rasterized to a 2× PNG with the card background and 24 px padding,
+  including HTML (`foreignObject`) labels. On Desktop the DSH `fileActions`
+  service opens the native save dialog and reports the saved path; on Web, or
+  when the service is missing, the PNG downloads. Filenames are
+  `mermaid-<type>-<timestamp>.png`, and failures show a status message instead of
+  disturbing the diagram.
+
 ## 0.7.2 — 2026-11-16
 
 - Distribution: the release script now emits the npm tarball as the primary
