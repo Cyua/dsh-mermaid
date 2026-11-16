@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.2 — 2026-11-16
+
+- Distribution: `npm run release:tgz` now produces only the installable tarball
+  (`release/cyua-dsh-mermaid-<version>.tgz`) with its SHA-256 — the zip/folder
+  fallback and its install note are dropped, since DSH installs the tarball
+  directly and keeps its own copy.
+
 ## 0.8.1 — 2026-11-16
 
 - Fix **Save as image** failing with “图片保存失败” on flowcharts: Chromium
