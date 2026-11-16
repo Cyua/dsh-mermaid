@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.1 — 2026-11-16
+
+- Fix **Save as image** failing with “图片保存失败” on flowcharts: Chromium
+  tainted the export canvas because Mermaid renders HTML node labels inside
+  `<foreignObject>`, and `toBlob` refuses tainted canvases. The export copy now
+  replaces those labels with SVG `<text>` (same lines, font, color and position)
+  before rasterizing; sequence diagrams (which already use SVG text) were not
+  affected. Verified with a 418×330 flowchart carrying 5 HTML labels → 932×756
+  PNG, and the Desktop native save dialog opens (`mode=saveAs`).
+
 ## 0.8.0 — 2026-11-16
 
 - Add **Save as image** to the diagram toolbar and the full-screen viewer. The

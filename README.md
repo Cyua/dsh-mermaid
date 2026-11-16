@@ -246,12 +246,16 @@ readable text is never touched.
 
 ### Saving images
 
-The save button serializes the rendered SVG (with `xmlns`, an explicit
-`viewBox`/size, and the `xmlns` on `foreignObject` label wrappers), loads it as
-an `<img>`, and draws it to a 2× canvas padded with 24 px of the card background
-before encoding PNG — so HTML labels and the SVG's own `<style>` survive
-rasterization, and the PNG matches what the card shows. The filename is
-`mermaid-<type>-<timestamp>.png`.
+The save button clones the rendered SVG with an explicit `xmlns`, `viewBox` and
+size. Chromium **taints a canvas** when an SVG image contains `<foreignObject>`
+HTML — `toBlob` then throws "Tainted canvases may not be exported", which broke
+PNG export for flowcharts (Mermaid puts HTML node labels in foreignObject).
+The export copy therefore **replaces every foreignObject label with a plain SVG
+`<text>`**, built from the label's rendered lines, computed font and color, and
+its user-space box; the live card keeps its HTML labels. The flattened copy is
+loaded as an `<img>` and drawn to a 2× canvas padded with 24 px of the card
+background before PNG encoding, so the SVG's own `<style>` (arrows, rounded
+nodes, filters) survives. The filename is `mermaid-<type>-<timestamp>.png`.
 
 Saving goes through the DSH `fileActions` service when available: a `read`
 callback hands over the PNG blob, `canSaveAs` selects Desktop's native *Save as*
@@ -326,7 +330,7 @@ build in the dark theme:
 | Figure chrome | type label, copy/fit/full-screen/source buttons, 34 px toolbar, 16 px radius, rounded shapes (`rx: 9px`), soft drop shadow |
 | Lazy rendering | a block parked far from the viewport keeps its native code block (no figure, no hidden content); moving it within 400 px renders the figure to `ready` and hides the code block; both the `IntersectionObserver` path and the geometry fallback (`source=io` / `source=proximity`) were observed activating blocks |
 | Viewer resize | 1602×974 default panel with **8** grips and the caption row reserved (window 1920×1032, caption clearance 40 px, overlay top padding 50 px); corner drag −160×−100 shrinks to 1444×884; left-edge drag widens; bottom-left drag reaches the window padding; **double-click on the bar** fills to 1884×974 and a second double-click restores the previous size; dragging the top edge stops at `top=50` (never under the native buttons); toolbar controls are centered in the bar (offset 3 px) with 826 px to the right edge; the size is stored and reopened |
-| Image export | a rendered 662×289 sequence diagram rasterizes to a 1420×674 PNG (50,117 bytes: 2× + 24 px padding per side, card background, HTML labels included); the save button opened the Desktop native save dialog through `fileActions` (blob source) and the fallback anchor download is used when the service is absent |
+| Image export | a 662×289 sequence diagram rasterizes to 1420×674 PNG (50,117 bytes) and a 418×330 flowchart with **5** `foreignObject` HTML labels rasterizes to 932×756 PNG (105,680 bytes) after the labels are flattened to SVG text; clicking the toolbar button opens the Desktop native save dialog (`mode=saveAs`, cancel returns `cancelled`, no toast) and the fallback anchor download is used when `fileActions` is absent |
 
 Known verification limits: the live checks were run in the dark theme; the light
 palette goes through the same token path but was not re-audited.

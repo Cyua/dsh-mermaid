@@ -2097,6 +2097,71 @@ function loadImageElement(url) {
   })
 }
 
+/**
+ * Chromium taints a canvas when an SVG image contains `<foreignObject>` HTML,
+ * which blocks `toBlob`. Mermaid uses foreignObject for HTML node labels, so the
+ * export copy replaces each one with a plain SVG `<text>` built from the label's
+ * rendered lines and computed typography. The live card is untouched and keeps
+ * its HTML labels.
+ */
+function flattenForeignObjectLabels(sourceSvg, clone) {
+  const live = [...sourceSvg.querySelectorAll('foreignObject')]
+  const copies = [...clone.querySelectorAll('foreignObject')]
+  let flattened = 0
+  for (let index = 0; index < copies.length; index += 1) {
+    const copy = copies[index]
+    const original = live[index]
+    if (!copy || !original) continue
+    const label = original.querySelector('div, span, p') || original
+    const text = (label.innerText || label.textContent || '').replace(/\u00a0/g, ' ').trim()
+    const lines = text
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+    let box = null
+    try {
+      box = original.getBBox()
+    } catch {
+      box = null
+    }
+    if (!lines.length || !box || !box.width || !box.height) {
+      copy.remove()
+      continue
+    }
+    const style = getComputedStyle(label)
+    const fontSize = parseFloat(style.fontSize) || 14
+    let lineHeight = parseFloat(style.lineHeight)
+    if (!Number.isFinite(lineHeight) || lineHeight <= 0) lineHeight = fontSize * 1.35
+    const fill = style.color || style.fill || 'currentColor'
+    const align = style.textAlign === 'left' ? 'start' : style.textAlign === 'right' ? 'end' : 'middle'
+    const x = align === 'start' ? box.x : align === 'end' ? box.x + box.width : box.x + box.width / 2
+    const total = lines.length * lineHeight
+    const firstY = box.y + Math.max(0, (box.height - total) / 2) + lineHeight * 0.75
+    const textEl = document.createElementNS('http://www.w3.org/2000/svg', 'text')
+    textEl.setAttribute('x', String(x))
+    textEl.setAttribute('y', String(firstY))
+    textEl.setAttribute('text-anchor', align)
+    textEl.setAttribute('font-family', style.fontFamily || 'inherit')
+    textEl.setAttribute('font-size', String(fontSize))
+    textEl.setAttribute('font-weight', style.fontWeight || '400')
+    textEl.setAttribute('fill', fill)
+    lines.forEach((line, lineIndex) => {
+      const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
+      tspan.setAttribute('x', String(x))
+      if (lineIndex > 0) tspan.setAttribute('dy', String(lineHeight))
+      tspan.textContent = line
+      textEl.appendChild(tspan)
+    })
+    try {
+      copy.replaceWith(textEl)
+      flattened += 1
+    } catch {
+      copy.remove()
+    }
+  }
+  return flattened
+}
+
 /** Rasterize the rendered diagram (with its card background) to a PNG blob. */
 async function renderDiagramPng(svg, background) {
   const box = diagramExportBox(svg)
@@ -2111,6 +2176,7 @@ async function renderDiagramPng(svg, background) {
   clone.querySelectorAll('foreignObject div').forEach((node) => {
     if (!node.getAttribute('xmlns')) node.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml')
   })
+  flattenForeignObjectLabels(svg, clone)
   const source = new XMLSerializer().serializeToString(clone)
   const svgUrl = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }))
   try {
