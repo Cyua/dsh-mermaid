@@ -321,7 +321,7 @@ window.__ModuleLoader__.load({
         post('/report', { event: 'lazy-test', epoch, at: Date.now(), before, after }, true)
         lazyHost.remove()
       }
-      // Viewer resize: drag the corner grip, then reopen to check persistence.
+      // Viewer resize: every edge/corner resizes, and the size is remembered.
       if (alive()) {
         let previousSize = null
         try {
@@ -338,17 +338,21 @@ window.__ModuleLoader__.load({
         await sleep(320)
         const overlay = document.querySelector('.dsh-mermaid-viewer')
         const panel = overlay ? overlay.querySelector('.dsh-mermaid-viewer-panel') : null
-        const before = panel
-          ? {
-              width: Math.round(panel.getBoundingClientRect().width),
-              height: Math.round(panel.getBoundingClientRect().height),
-              grips: overlay.querySelectorAll('.dsh-mermaid-viewer-grip').length,
-            }
-          : null
-        let after = null
-        let reopened = null
-        if (panel) {
-          const grip = overlay.querySelector('.dsh-mermaid-viewer-grip[data-axis="both"]')
+        const body = overlay ? overlay.querySelector('.dsh-mermaid-viewer-body') : null
+        const measure = () => {
+          const rect = panel.getBoundingClientRect()
+          return {
+            left: Math.round(rect.left),
+            top: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            bodyWidth: body ? body.clientWidth : 0,
+            bodyHeight: body ? body.clientHeight : 0,
+          }
+        }
+        const drag = async (handleAxis, dx, dy) => {
+          const grip = overlay.querySelector('.dsh-mermaid-viewer-grip[data-axis="' + handleAxis + '"]')
+          if (!grip) return null
           const rect = grip.getBoundingClientRect()
           const startX = Math.round(rect.left + rect.width / 2)
           const startY = Math.round(rect.top + rect.height / 2)
@@ -364,40 +368,46 @@ window.__ModuleLoader__.load({
               clientY: startY,
             }),
           )
-          await sleep(80)
+          await sleep(60)
           window.dispatchEvent(
             new PointerEvent('pointermove', {
               bubbles: true,
               buttons: 1,
               pointerId: 7,
               pointerType: 'mouse',
-              clientX: startX - 160,
-              clientY: startY - 100,
+              clientX: startX + dx,
+              clientY: startY + dy,
             }),
           )
-          await sleep(80)
+          await sleep(60)
           window.dispatchEvent(
             new PointerEvent('pointerup', {
               bubbles: true,
               button: 0,
               pointerId: 7,
               pointerType: 'mouse',
-              clientX: startX - 160,
-              clientY: startY - 100,
+              clientX: startX + dx,
+              clientY: startY + dy,
             }),
           )
-          await sleep(220)
-          const body = overlay.querySelector('.dsh-mermaid-viewer-body')
-          const zoom = overlay.querySelector('.dsh-mermaid-viewer-zoom')
-          after = {
-            width: Math.round(panel.getBoundingClientRect().width),
-            height: Math.round(panel.getBoundingClientRect().height),
-            bodyWidth: body ? body.clientWidth : 0,
-            bodyHeight: body ? body.clientHeight : 0,
-            zoom: zoom ? zoom.textContent : '',
-            stored: window.localStorage.getItem('dsh-mermaid:viewer-size'),
-            resizingAttr: overlay.hasAttribute('data-resizing'),
-          }
+          await sleep(160)
+          return measure()
+        }
+        let before = null
+        let afterSE = null
+        let afterW = null
+        let afterSW = null
+        let zoom = ''
+        let stored = ''
+        let reopened = null
+        if (panel) {
+          before = { ...measure(), grips: overlay.querySelectorAll('.dsh-mermaid-viewer-grip').length }
+          afterSE = await drag('se', -160, -100)
+          afterW = await drag('w', -120, 0)
+          afterSW = await drag('sw', -100, 80)
+          const zoomLabel = overlay.querySelector('.dsh-mermaid-viewer-zoom')
+          zoom = zoomLabel ? zoomLabel.textContent : ''
+          stored = window.localStorage.getItem('dsh-mermaid:viewer-size')
           viewerClose()
           await sleep(160)
           clickNode(expand)
@@ -405,10 +415,7 @@ window.__ModuleLoader__.load({
           const overlay2 = document.querySelector('.dsh-mermaid-viewer')
           const panel2 = overlay2 ? overlay2.querySelector('.dsh-mermaid-viewer-panel') : null
           reopened = panel2
-            ? {
-                width: Math.round(panel2.getBoundingClientRect().width),
-                height: Math.round(panel2.getBoundingClientRect().height),
-              }
+            ? { width: Math.round(panel2.getBoundingClientRect().width), height: Math.round(panel2.getBoundingClientRect().height) }
             : null
           viewerClose()
         }
@@ -418,7 +425,7 @@ window.__ModuleLoader__.load({
         } catch {
           /* storage unavailable */
         }
-        post('/report', { event: 'viewer-resize', epoch, at: Date.now(), before, after, reopened }, true)
+        post('/report', { event: 'viewer-resize', epoch, before, afterSE, afterW, afterSW, zoom, stored, reopened }, true)
         host.remove()
       }
       post('/report', { event: 'tests-done', epoch, at: Date.now() }, true)

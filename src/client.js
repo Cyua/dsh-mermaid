@@ -512,36 +512,70 @@ const CSS = `
   height: auto;
 }
 /* Resize affordances: the handles sit just outside the panel so they never cover
-   the viewer's own scrollbars. */
+   the viewer's own scrollbars. Every edge and corner resizes. */
 .dsh-mermaid-viewer-grip {
   position: absolute;
   z-index: 4;
   touch-action: none;
   border-radius: 4px;
 }
-.dsh-mermaid-viewer-grip[data-axis='x'] {
+.dsh-mermaid-viewer-grip[data-axis='e'] {
   top: 16px;
   bottom: 16px;
   right: -7px;
   width: 14px;
   cursor: ew-resize;
 }
-.dsh-mermaid-viewer-grip[data-axis='y'] {
+.dsh-mermaid-viewer-grip[data-axis='w'] {
+  top: 16px;
+  bottom: 16px;
+  left: -7px;
+  width: 14px;
+  cursor: ew-resize;
+}
+.dsh-mermaid-viewer-grip[data-axis='s'] {
   left: 16px;
   right: 16px;
   bottom: -7px;
   height: 14px;
   cursor: ns-resize;
 }
-.dsh-mermaid-viewer-grip[data-axis='both'] {
-  right: -7px;
-  bottom: -7px;
+.dsh-mermaid-viewer-grip[data-axis='n'] {
+  left: 16px;
+  right: 16px;
+  top: -7px;
+  height: 14px;
+  cursor: ns-resize;
+}
+.dsh-mermaid-viewer-grip[data-axis='se'],
+.dsh-mermaid-viewer-grip[data-axis='sw'],
+.dsh-mermaid-viewer-grip[data-axis='ne'],
+.dsh-mermaid-viewer-grip[data-axis='nw'] {
   width: 22px;
   height: 22px;
   z-index: 5;
+}
+.dsh-mermaid-viewer-grip[data-axis='se'] {
+  right: -7px;
+  bottom: -7px;
   cursor: nwse-resize;
 }
-.dsh-mermaid-viewer-grip[data-axis='both']::after {
+.dsh-mermaid-viewer-grip[data-axis='sw'] {
+  left: -7px;
+  bottom: -7px;
+  cursor: nesw-resize;
+}
+.dsh-mermaid-viewer-grip[data-axis='ne'] {
+  right: -7px;
+  top: -7px;
+  cursor: nesw-resize;
+}
+.dsh-mermaid-viewer-grip[data-axis='nw'] {
+  left: -7px;
+  top: -7px;
+  cursor: nwse-resize;
+}
+.dsh-mermaid-viewer-grip[data-axis='se']::after {
   content: '';
   position: absolute;
   right: 6px;
@@ -554,12 +588,10 @@ const CSS = `
   opacity: 0.55;
   transition: opacity 0.12s ease;
 }
-.dsh-mermaid-viewer-grip[data-axis='both']:hover::after {
+.dsh-mermaid-viewer-grip[data-axis='se']:hover::after {
   opacity: 1;
 }
-.dsh-mermaid-viewer-grip[data-axis='x']:hover,
-.dsh-mermaid-viewer-grip[data-axis='y']:hover,
-.dsh-mermaid-viewer-grip[data-axis='both']:hover {
+.dsh-mermaid-viewer-grip:hover {
   background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
 }
 .dsh-mermaid-viewer[data-resizing] {
@@ -2176,6 +2208,8 @@ function clampViewerPanelSize(state) {
     Math.round(Math.min(Math.max(top, padY), Math.max(padY, (window.innerHeight || 800) - padY - size.height))) + 'px'
 }
 
+const VIEWER_GRIP_AXES = ['e', 'w', 's', 'n', 'se', 'sw', 'ne', 'nw']
+
 function beginViewerResize(state, overlay, panel, event, axis) {
   if (event.button !== 0) return
   const viewer = overlay.__dshMermaidViewer
@@ -2184,14 +2218,49 @@ function beginViewerResize(state, overlay, panel, event, axis) {
   event.stopPropagation()
   const start = panel.getBoundingClientRect()
   anchorViewerPanel(panel)
-  const cursor = axis === 'x' ? 'ew-resize' : axis === 'y' ? 'ns-resize' : 'nwse-resize'
+  const horizontal = axis.includes('e') || axis.includes('w')
+  const vertical = axis.includes('s') || axis.includes('n')
+  const cursor = horizontal && vertical
+    ? axis === 'se' || axis === 'nw'
+      ? 'nwse-resize'
+      : 'nesw-resize'
+    : horizontal
+      ? 'ew-resize'
+      : 'ns-resize'
   overlay.setAttribute('data-resizing', '')
   overlay.style.cursor = cursor
+  const viewportWidth = window.innerWidth || 1280
+  const viewportHeight = window.innerHeight || 800
+  const padX = Math.round(viewportWidth * 0.03)
+  const padY = Math.round(viewportHeight * 0.03)
+  const max = viewerMaxSize()
+  const startRight = start.left + start.width
+  const startBottom = start.top + start.height
   let last = null
   const onMove = (moveEvent) => {
     if (moveEvent.pointerId != null && event.pointerId != null && moveEvent.pointerId !== event.pointerId) return
-    const width = axis === 'y' ? start.width : start.width + (moveEvent.clientX - event.clientX)
-    const height = axis === 'x' ? start.height : start.height + (moveEvent.clientY - event.clientY)
+    const dx = moveEvent.clientX - event.clientX
+    const dy = moveEvent.clientY - event.clientY
+    let left = start.left
+    let top = start.top
+    let width = start.width
+    let height = start.height
+    if (axis.includes('e')) {
+      width = Math.min(Math.max(start.width + dx, VIEWER_MIN_WIDTH), max.width)
+    } else if (axis.includes('w')) {
+      width = Math.max(VIEWER_MIN_WIDTH, Math.min(start.width - dx, max.width, startRight - padX))
+      left = startRight - width
+    }
+    if (axis.includes('s')) {
+      height = Math.min(Math.max(start.height + dy, VIEWER_MIN_HEIGHT), max.height)
+    } else if (axis.includes('n')) {
+      height = Math.max(VIEWER_MIN_HEIGHT, Math.min(start.height - dy, max.height, startBottom - padY))
+      top = startBottom - height
+    }
+    left = Math.max(Math.min(left, viewportWidth - padX - width), padX)
+    top = Math.max(Math.min(top, viewportHeight - padY - height), padY)
+    panel.style.left = Math.round(left) + 'px'
+    panel.style.top = Math.round(top) + 'px'
     last = setViewerPanelSize(panel, { width, height })
     setViewerMode(state, viewer.mode || 'fit')
   }
@@ -2219,7 +2288,7 @@ function installViewerResize(state, overlay, panel) {
   } catch {
     /* fall back to the CSS size */
   }
-  for (const axis of ['x', 'y', 'both']) {
+  for (const axis of VIEWER_GRIP_AXES) {
     const grip = document.createElement('div')
     grip.className = 'dsh-mermaid-viewer-grip'
     grip.setAttribute('data-axis', axis)

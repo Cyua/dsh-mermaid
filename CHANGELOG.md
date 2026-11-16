@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 — 2026-11-16
+
+- The viewer panel now resizes from **all** edges and corners (left, right, top,
+  bottom and the four corners), each pinned to the opposite edge while dragging;
+  a drag can no longer push the panel past the window padding. The stored size is
+  still restored the next time the viewer opens.
+
 ## 0.5.0 — 2026-11-16
 
 - The full-screen viewer can be resized: drag the right edge, bottom edge or the
