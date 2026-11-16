@@ -1,0 +1,34 @@
+__NAME__ __VERSION__ — DeepSeek Harness 的 Mermaid 图表插件
+==========================================================
+
+支持环境：DeepSeek Harness 桌面版（Web UI）。已在 DSH desktop 0.2.2-rc.3 验证。
+
+安装步骤
+--------
+1. 把压缩包解压到一个固定目录，例如：
+   D:\AI\plugins\__NAME__-__VERSION__
+   注意：安装后 DSH 会链接到这个目录，请不要删除或移动它。
+
+2. 在 DSH 里执行（插件管理界面或 Agent 均可）：
+   plugin_manager  action = install_bundle
+                   target = D:\AI\plugins\__NAME__-__VERSION__
+
+3. 插件列表里会出现 “cyua-mermaid-render”，确认它是启用状态；
+   如果没有，用 plugin_manager action = set_plugin 启用，或重启 DSH。
+
+4. 刷新页面（或重启 DSH）。在聊天里写 mermaid 代码块（三个反引号 + mermaid）
+   即可看到渲染。
+
+功能速览
+--------
+- mermaid 代码块直接渲染成内嵌 SVG 卡片：查看/复制源码、适应宽度、原始大小、
+  全屏查看（八向拖拽缩放、双击标题栏铺满）。
+- 跟随 DSH 深/浅色主题，自动修复浅色填充导致的对比度问题。
+- 流程图 subgraph 分组、序列图参与者自动分配不同颜色。
+- 视口懒渲染：历史里很远的图不会一次性全部渲染。
+- 自带 Mermaid 12，离线可用，无外部依赖。
+
+卸载
+----
+plugin_manager  action = remove_bundle
+                target = @cyua/dsh-mermaid

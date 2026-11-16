@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1 — 2026-11-16
+
+- Add `npm run release:zip`: a self-contained, shareable zip of the published
+  bundle plus a Chinese install note (and its SHA-256), for internal file shares
+  where recipients cannot reach a package registry.
+
 ## 0.7.0 — 2026-11-16
 
 - The full-screen viewer no longer sits under the Windows native caption buttons.

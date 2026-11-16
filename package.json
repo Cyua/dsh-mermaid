@@ -1,6 +1,6 @@
 {
   "name": "@cyua/dsh-mermaid",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Render fenced Mermaid code blocks in the DeepSeek Harness Web UI as theme-aware diagrams.",
   "keywords": [
     "dsh",
@@ -54,7 +54,8 @@
     "build:debug": "node build.mjs --debug",
     "prepare": "node build.mjs",
     "verify": "node tools/check-release.mjs",
-    "check": "node --check src/client.js && node build.mjs && node tools/check-release.mjs"
+    "check": "node --check src/client.js && node build.mjs && node tools/check-release.mjs",
+    "release:zip": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/pack-release.ps1"
   },
   "devDependencies": {
     "esbuild": "^0.25.12",

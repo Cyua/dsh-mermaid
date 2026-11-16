@@ -31,7 +31,7 @@ original Mermaid source stays one click away.
 
 - DeepSeek Harness desktop with the Web UI and the `plugin_manager` plugin
   (bundled with the desktop app).
-- Verified with **DSH desktop 0.2.2-rc.1**. The plugin looks at the Markdown
+- Verified with **DSH desktop 0.2.2-rc.3**. The plugin looks at the Markdown
   code-block DOM and the Client `theme` / `locale` services, so a DSH release
   that changes those internals may need a plugin update.
 
@@ -61,6 +61,29 @@ Inside a DSH session:
 
 To upgrade, install the new version and reload; to remove, use
 `plugin_manager action = remove_bundle target = @cyua/dsh-mermaid`.
+
+## Sharing without a registry (zip)
+
+For an internal file share, build a self-contained zip:
+
+```powershell
+npm install        # once
+npm run release:zip
+```
+
+The script builds the release Client half, packages exactly the published files
+(`dist/client.js`, manifest, patch, locale, icon, docs) plus a Chinese
+`安装说明.txt`, and writes `release/dsh-mermaid-<version>.zip` (~1.5 MB) with its
+SHA-256. Recipients:
+
+1. Extract the zip to a stable folder, e.g. `D:\AI\plugins\dsh-mermaid-0.7.1`.
+   The profile links to this folder, so it must not be deleted or moved later.
+2. `plugin_manager  action = install_bundle  target = <that folder>`
+3. Enable the `cyua-mermaid-render` row (or restart DSH), then reload the page.
+
+No Node.js or npm is needed on the recipient machine — DSH installs the bundle
+itself, and the zip already contains the built `dist/client.js`. To upgrade,
+extract the new zip and install that folder; `remove_bundle` uninstalls.
 
 ## Usage
 
