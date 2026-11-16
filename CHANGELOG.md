@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.2 — 2026-11-16
+
+- Distribution: the release script now emits the npm tarball as the primary
+  artifact (`cyua-dsh-mermaid-<version>.tgz`), which DSH can install directly —
+  no unzip — through the Web UI's “压缩包 / Tarball” install subject or
+  `install_bundle` with the file path (`file:` spec or plain path). The zip stays
+  as a folder-based fallback and both artifacts print their SHA-256.
+
 ## 0.7.1 — 2026-11-16
 
 - Add `npm run release:zip`: a self-contained, shareable zip of the published

@@ -1,8 +1,11 @@
-# Build a self-contained zip for internal sharing.
+# Build the shareable artifacts for internal distribution.
 #
-# The zip contains exactly what `npm pack` publishes (package root + manifest +
-# dist/client.js + locale + icon + docs) plus a Chinese install note. Recipients
-# extract it and run `plugin_manager install_bundle` with the extracted folder.
+# The tarball (`cyua-dsh-mermaid-<version>.tgz`) is the primary artifact: DSH can
+# install it directly — no unzip — with `install_bundle target=<path to .tgz>`
+# (the "压缩包 / Tarball" install subject in the Web UI). The zip is a fallback for
+# people who prefer a folder: it contains the same package files plus a Chinese
+# install note and is installed by pointing `install_bundle` at the extracted
+# directory.
 #
 # Usage: npm run release:zip   (or powershell -File tools/pack-release.ps1)
 $ErrorActionPreference = 'Stop'
@@ -22,40 +25,43 @@ try {
 
   if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
   if (Test-Path $zip) { Remove-Item $zip -Force }
-  New-Item -ItemType Directory -Force $stage | Out-Null
+  New-Item -ItemType Directory -Force $releaseDir | Out-Null
 
   # --ignore-scripts keeps the `prepare` build output out of the JSON output;
   # the release build has already been produced above.
   $packJson = npm pack --json --ignore-scripts | ConvertFrom-Json
   $tarball = $packJson[0].filename
   if (-not (Test-Path $tarball)) { throw "npm pack did not produce $tarball" }
-  tar -xzf $tarball -C $stage --strip-components=1
-  if ($LASTEXITCODE -ne 0) { throw 'tar extraction failed' }
-  Remove-Item $tarball -Force
+  $tarballOut = Join-Path $releaseDir $tarball
+  Move-Item $tarball $tarballOut -Force
 
+  # Folder layout for the fallback zip.
+  New-Item -ItemType Directory -Force $stage | Out-Null
+  tar -xzf $tarballOut -C $stage --strip-components=1
+  if ($LASTEXITCODE -ne 0) { throw 'tar extraction failed' }
   $note = Get-Content (Join-Path $root 'tools/install-note.txt') -Raw
   $note = $note.Replace('__NAME__', $name).Replace('__VERSION__', $version)
   Set-Content -Path (Join-Path $stage '安装说明.txt') -Value $note -Encoding UTF8
-
   Compress-Archive -Path $stage -DestinationPath $zip -Force
-  $hash = '(unavailable)'
-  try {
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    $stream = [System.IO.File]::OpenRead($zip)
+
+  function Get-Sha256([string]$path) {
     try {
-      $bytes = $sha.ComputeHash($stream)
-    } finally {
-      $stream.Close()
+      $sha = [System.Security.Cryptography.SHA256]::Create()
+      $stream = [System.IO.File]::OpenRead($path)
+      try { $bytes = $sha.ComputeHash($stream) } finally { $stream.Close() }
+      return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
+    } catch {
+      return '(unavailable)'
     }
-    $hash = (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
-  } catch {
-    Write-Warning "could not hash the zip: $($_.Exception.Message)"
   }
-  $size = [math]::Round((Get-Item $zip).Length / 1MB, 2)
+
   Write-Host ''
-  Write-Host "zip:    $zip"
-  Write-Host "size:   $size MiB"
-  Write-Host "sha256: $hash"
+  Write-Host "tarball: $tarballOut"
+  Write-Host "  size:   $([math]::Round((Get-Item $tarballOut).Length / 1MB, 2)) MiB"
+  Write-Host "  sha256: $(Get-Sha256 $tarballOut)"
+  Write-Host "zip:     $zip"
+  Write-Host "  size:   $([math]::Round((Get-Item $zip).Length / 1MB, 2)) MiB"
+  Write-Host "  sha256: $(Get-Sha256 $zip)"
 } finally {
   Pop-Location
 }

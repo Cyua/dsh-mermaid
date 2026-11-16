@@ -62,28 +62,31 @@ Inside a DSH session:
 To upgrade, install the new version and reload; to remove, use
 `plugin_manager action = remove_bundle target = @cyua/dsh-mermaid`.
 
-## Sharing without a registry (zip)
+## Sharing without a registry (tarball / zip)
 
-For an internal file share, build a self-contained zip:
+For an internal file share, build the distribution artifacts:
 
 ```powershell
 npm install        # once
 npm run release:zip
 ```
 
-The script builds the release Client half, packages exactly the published files
-(`dist/client.js`, manifest, patch, locale, icon, docs) plus a Chinese
-`安装说明.txt`, and writes `release/dsh-mermaid-<version>.zip` (~1.5 MB) with its
-SHA-256. Recipients:
+The script builds the release Client half and writes, with SHA-256 hashes:
 
-1. Extract the zip to a stable folder, e.g. `D:\AI\plugins\dsh-mermaid-0.7.1`.
-   The profile links to this folder, so it must not be deleted or moved later.
-2. `plugin_manager  action = install_bundle  target = <that folder>`
-3. Enable the `cyua-mermaid-render` row (or restart DSH), then reload the page.
+- `release/cyua-dsh-mermaid-<version>.tgz` (~1.5 MB) — **recommended**: DSH
+  installs a tarball directly, no unzip. In the Web UI's plugin page choose the
+  **“压缩包 / Tarball”** install subject and give the file path, or run
+  `plugin_manager  action = install_bundle  target = <path>\cyua-dsh-mermaid-0.7.2.tgz`
+  (`file:<path>` also works). The profile keeps its own installed copy, so the
+  tarball may be deleted or moved afterwards.
+- `release/dsh-mermaid-<version>.zip` — fallback for people who prefer a folder:
+  extract it to a stable directory and point `install_bundle` at that directory
+  (the profile links to it, so it must stay). It also carries the Chinese
+  `安装说明.txt` describing both routes.
 
 No Node.js or npm is needed on the recipient machine — DSH installs the bundle
-itself, and the zip already contains the built `dist/client.js`. To upgrade,
-extract the new zip and install that folder; `remove_bundle` uninstalls.
+itself and the artifacts already contain the built `dist/client.js`. To upgrade,
+install the new artifact; `remove_bundle target=@cyua/dsh-mermaid` uninstalls.
 
 ## Usage
 

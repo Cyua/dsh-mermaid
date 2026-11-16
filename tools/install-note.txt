@@ -3,21 +3,25 @@ __NAME__ __VERSION__ — DeepSeek Harness 的 Mermaid 图表插件
 
 支持环境：DeepSeek Harness 桌面版（Web UI）。已在 DSH desktop 0.2.2-rc.3 验证。
 
-安装步骤
---------
-1. 把压缩包解压到一个固定目录，例如：
-   D:\AI\plugins\__NAME__-__VERSION__
-   注意：安装后 DSH 会链接到这个目录，请不要删除或移动它。
+安装方式 A（推荐，无需解压）：直接安装 .tgz
+------------------------------------------------
+1. 把 cyua-__NAME__-__VERSION__.tgz 放到任意目录（之后可以删除或移走，DSH 会安装一份副本）。
+2. 在 DSH 的插件页「添加插件」里选择「压缩包 / Tarball」，填入这个文件的完整路径；
+   或者在对话里执行：
+   plugin_manager  action = install_bundle
+                   target = D:\下载\cyua-__NAME__-__VERSION__.tgz
+3. 插件列表出现 “cyua-mermaid-render” 并启用后，刷新页面（或重启 DSH）即可。
 
-2. 在 DSH 里执行（插件管理界面或 Agent 均可）：
+安装方式 B（文件夹）：解压 zip
+--------------------------------
+1. 解压 zip 到一个固定目录，例如 D:\AI\plugins\__NAME__-__VERSION__
+   注意：这种方式 DSH 会链接到该目录，安装后不要删除或移动它。
+2. 在 DSH 里执行：
    plugin_manager  action = install_bundle
                    target = D:\AI\plugins\__NAME__-__VERSION__
+3. 同样确认 “cyua-mermaid-render” 已启用，然后刷新页面。
 
-3. 插件列表里会出现 “cyua-mermaid-render”，确认它是启用状态；
-   如果没有，用 plugin_manager action = set_plugin 启用，或重启 DSH。
-
-4. 刷新页面（或重启 DSH）。在聊天里写 mermaid 代码块（三个反引号 + mermaid）
-   即可看到渲染。
+两种方式选一种即可，不要重复安装。
 
 功能速览
 --------
