@@ -321,7 +321,7 @@ window.__ModuleLoader__.load({
         post('/report', { event: 'lazy-test', epoch, at: Date.now(), before, after }, true)
         lazyHost.remove()
       }
-      // Viewer resize: every edge/corner resizes, and the size is remembered.
+      // Viewer resize: eight handles, dblclick title-bar maximize, persisted size.
       if (alive()) {
         let previousSize = null
         try {
@@ -339,6 +339,7 @@ window.__ModuleLoader__.load({
         const overlay = document.querySelector('.dsh-mermaid-viewer')
         const panel = overlay ? overlay.querySelector('.dsh-mermaid-viewer-panel') : null
         const body = overlay ? overlay.querySelector('.dsh-mermaid-viewer-body') : null
+        const bar = overlay ? overlay.querySelector('.dsh-mermaid-viewer-bar') : null
         const measure = () => {
           const rect = panel.getBoundingClientRect()
           return {
@@ -397,16 +398,21 @@ window.__ModuleLoader__.load({
         let afterSE = null
         let afterW = null
         let afterSW = null
-        let zoom = ''
+        let maximized = null
+        let restored = null
         let stored = ''
         let reopened = null
-        if (panel) {
-          before = { ...measure(), grips: overlay.querySelectorAll('.dsh-mermaid-viewer-grip').length }
+        if (panel && bar) {
+          before = { ...measure(), grips: overlay.querySelectorAll('.dsh-mermaid-viewer-grip').length, padding: Math.round(window.innerWidth * 0.01) }
           afterSE = await drag('se', -160, -100)
           afterW = await drag('w', -120, 0)
           afterSW = await drag('sw', -100, 80)
-          const zoomLabel = overlay.querySelector('.dsh-mermaid-viewer-zoom')
-          zoom = zoomLabel ? zoomLabel.textContent : ''
+          bar.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+          await sleep(220)
+          maximized = measure()
+          bar.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+          await sleep(220)
+          restored = measure()
           stored = window.localStorage.getItem('dsh-mermaid:viewer-size')
           viewerClose()
           await sleep(160)
@@ -425,7 +431,11 @@ window.__ModuleLoader__.load({
         } catch {
           /* storage unavailable */
         }
-        post('/report', { event: 'viewer-resize', epoch, before, afterSE, afterW, afterSW, zoom, stored, reopened }, true)
+        post(
+          '/report',
+          { event: 'viewer-resize', epoch, before, afterSE, afterW, afterSW, maximized, restored, stored, reopened },
+          true,
+        )
         host.remove()
       }
       post('/report', { event: 'tests-done', epoch, at: Date.now() }, true)

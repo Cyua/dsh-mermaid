@@ -445,7 +445,7 @@ const CSS = `
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 3vh 3vw;
+  padding: 1vh 1vw;
   background: var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.62));
   backdrop-filter: blur(6px);
   animation: dsh-mermaid-viewer-in 0.16s ease both;
@@ -454,8 +454,8 @@ const CSS = `
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(1600px, 94vw);
-  height: min(980px, 94vh);
+  width: min(1600px, 98vw);
+  height: min(980px, 98vh);
   border: 1px solid var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12));
   border-radius: var(--dsw-radius-lg, 16px);
   background: var(--dsw-alias-bg-layer-1, #232324);
@@ -2138,9 +2138,28 @@ const VIEWER_MIN_HEIGHT = 300
 
 function viewerMaxSize() {
   return {
-    width: Math.max(VIEWER_MIN_WIDTH, Math.round((window.innerWidth || 1280) * 0.94)),
-    height: Math.max(VIEWER_MIN_HEIGHT, Math.round((window.innerHeight || 800) * 0.94)),
+    width: Math.max(VIEWER_MIN_WIDTH, Math.round((window.innerWidth || 1280) * 0.98)),
+    height: Math.max(VIEWER_MIN_HEIGHT, Math.round((window.innerHeight || 800) * 0.98)),
   }
+}
+
+function viewerViewport() {
+  return {
+    width: window.innerWidth || 1280,
+    height: window.innerHeight || 800,
+  }
+}
+
+/** Gap kept between a resized panel and the window edges (mirrors the overlay padding). */
+function viewerPadding() {
+  const viewport = viewerViewport()
+  return { x: Math.round(viewport.width * 0.01), y: Math.round(viewport.height * 0.01), width: viewport.width, height: viewport.height }
+}
+
+/** The size the panel has before any manual resize (mirrors the CSS defaults). */
+function viewerDefaultSize() {
+  const viewport = viewerViewport()
+  return clampViewerSize(Math.min(1600, viewport.width * 0.98), Math.min(980, viewport.height * 0.98))
 }
 
 function clampViewerSize(width, height) {
@@ -2198,14 +2217,11 @@ function clampViewerPanelSize(state) {
   const rect = panel.getBoundingClientRect()
   const size = setViewerPanelSize(panel, { width: rect.width, height: rect.height })
   if (panel.style.position !== 'fixed') return
-  const padX = Math.round((window.innerWidth || 1280) * 0.03)
-  const padY = Math.round((window.innerHeight || 800) * 0.03)
+  const pad = viewerPadding()
   const left = parseFloat(panel.style.left) || rect.left
   const top = parseFloat(panel.style.top) || rect.top
-  panel.style.left =
-    Math.round(Math.min(Math.max(left, padX), Math.max(padX, (window.innerWidth || 1280) - padX - size.width))) + 'px'
-  panel.style.top =
-    Math.round(Math.min(Math.max(top, padY), Math.max(padY, (window.innerHeight || 800) - padY - size.height))) + 'px'
+  panel.style.left = Math.round(Math.min(Math.max(left, pad.x), Math.max(pad.x, pad.width - pad.x - size.width))) + 'px'
+  panel.style.top = Math.round(Math.min(Math.max(top, pad.y), Math.max(pad.y, pad.height - pad.y - size.height))) + 'px'
 }
 
 const VIEWER_GRIP_AXES = ['e', 'w', 's', 'n', 'se', 'sw', 'ne', 'nw']
@@ -2216,6 +2232,7 @@ function beginViewerResize(state, overlay, panel, event, axis) {
   if (!viewer) return
   event.preventDefault()
   event.stopPropagation()
+  viewer.restoreSize = null
   const start = panel.getBoundingClientRect()
   anchorViewerPanel(panel)
   const horizontal = axis.includes('e') || axis.includes('w')
@@ -2229,11 +2246,10 @@ function beginViewerResize(state, overlay, panel, event, axis) {
       : 'ns-resize'
   overlay.setAttribute('data-resizing', '')
   overlay.style.cursor = cursor
-  const viewportWidth = window.innerWidth || 1280
-  const viewportHeight = window.innerHeight || 800
-  const padX = Math.round(viewportWidth * 0.03)
-  const padY = Math.round(viewportHeight * 0.03)
+  const pad = viewerPadding()
   const max = viewerMaxSize()
+  const padX = pad.x
+  const padY = pad.y
   const startRight = start.left + start.width
   const startBottom = start.top + start.height
   let last = null
@@ -2257,8 +2273,8 @@ function beginViewerResize(state, overlay, panel, event, axis) {
       height = Math.max(VIEWER_MIN_HEIGHT, Math.min(start.height - dy, max.height, startBottom - padY))
       top = startBottom - height
     }
-    left = Math.max(Math.min(left, viewportWidth - padX - width), padX)
-    top = Math.max(Math.min(top, viewportHeight - padY - height), padY)
+    left = Math.max(Math.min(left, pad.width - padX - width), padX)
+    top = Math.max(Math.min(top, pad.height - padY - height), padY)
     panel.style.left = Math.round(left) + 'px'
     panel.style.top = Math.round(top) + 'px'
     last = setViewerPanelSize(panel, { width, height })
@@ -2277,8 +2293,8 @@ function beginViewerResize(state, overlay, panel, event, axis) {
   window.addEventListener('pointercancel', finish)
 }
 
-/** Add the edge/corner handles and restore the last manually chosen size. */
-function installViewerResize(state, overlay, panel) {
+/** Add the edge/corner handles, restore the last size, and wire title-bar maximize. */
+function installViewerResize(state, overlay, panel, bar) {
   try {
     const stored = readViewerSize()
     if (stored) {
@@ -2295,6 +2311,44 @@ function installViewerResize(state, overlay, panel) {
     grip.setAttribute('aria-hidden', 'true')
     grip.addEventListener('pointerdown', (event) => beginViewerResize(state, overlay, panel, event, axis))
     panel.appendChild(grip)
+  }
+  if (bar) {
+    bar.addEventListener('dblclick', (event) => {
+      if (event.target && event.target.closest && event.target.closest('button')) return
+      toggleViewerMaximized(state, overlay, panel)
+    })
+  }
+}
+
+/**
+ * Double-clicking the viewer bar fills the window (98vw×98vh, still inside the
+ * 1vw/1vh padding) and a second double-click restores the size from before.
+ */
+function toggleViewerMaximized(state, overlay, panel) {
+  const viewer = overlay.__dshMermaidViewer
+  if (!viewer) return
+  const rect = panel.getBoundingClientRect()
+  const max = viewerMaxSize()
+  const isMax = Math.abs(rect.width - max.width) <= 2 && Math.abs(rect.height - max.height) <= 2
+  const target = isMax
+    ? viewer.restoreSize
+      ? clampViewerSize(viewer.restoreSize.width, viewer.restoreSize.height)
+      : viewerDefaultSize()
+    : max
+  viewer.restoreSize = isMax ? null : { width: rect.width, height: rect.height }
+  const pad = viewerPadding()
+  anchorViewerPanel(panel)
+  const left = Math.round((pad.width - target.width) / 2)
+  const top = Math.round((pad.height - target.height) / 2)
+  panel.style.left = Math.round(Math.max(pad.x, Math.min(left, pad.width - pad.x - target.width))) + 'px'
+  panel.style.top = Math.round(Math.max(pad.y, Math.min(top, pad.height - pad.y - target.height))) + 'px'
+  setViewerPanelSize(panel, target)
+  storeViewerSize(target)
+  setViewerMode(state, viewer.mode || 'fit')
+  if (isMax) overlay.removeAttribute('data-maximized')
+  else overlay.setAttribute('data-maximized', '')
+  if (__DSH_MERMAID_DEBUG__) {
+    report('viewer-maximize', { maximized: !isMax, width: target.width, height: target.height })
   }
 }
 
@@ -2407,9 +2461,10 @@ function openViewer(state, record) {
     naturalHeight,
     scale: 1,
     mode: 'fit',
+    restoreSize: null,
   }
   state.viewer = overlay
-  installViewerResize(state, overlay, panel)
+  installViewerResize(state, overlay, panel, bar)
   setViewerMode(state, 'fit')
   try {
     close.focus()

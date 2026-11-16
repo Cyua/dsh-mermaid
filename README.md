@@ -17,7 +17,8 @@ original Mermaid source stays one click away.
 - Large diagrams stay usable: bounded inline height, an *Open full screen* viewer
   with fit-screen / fit-width / actual-size presets, zoom, pan and keyboard
   shortcuts. The viewer panel is resizable from any edge or corner, and
-  remembers the last size you chose.
+  **double-clicking its title bar fills the window** (a second double-click
+  restores the previous size); it remembers the last size you chose.
 - Viewport-lazy rendering: a diagram is rendered when it comes within 400 px of
   the viewport, so a long chat history does not pay for every diagram up front —
   faraway blocks keep their native code block until they approach the view.
@@ -197,8 +198,10 @@ readable text is never touched.
   start of a zoomed diagram unreachable. The panel itself is **resizable**: drag
   any edge or corner (all eight handles resize; a small grip mark sits in the
   bottom-right corner); the panel is pinned where it was and grows toward the
-  dragged edge, clamped to 420×300 px minimum and 94vw×94vh maximum. The chosen
-  size is stored in `localStorage` and reopened at that size; the zoom preset
+  dragged edge, clamped to 420×300 px minimum and 98vw×98vh maximum. The overlay
+  only keeps a 1vw/1vh gap to the window edges. Double-clicking the title bar
+  toggles between filling that area and the size from before; the chosen size is
+  stored in `localStorage` and reopened at that size, and the zoom preset
   re-fits while resizing.
 
 ### Lazy rendering
@@ -266,7 +269,7 @@ build in the dark theme:
 | Participant colors | 4- and 7-participant sequences: actor boxes, stick figure and labels get distinct hues left-to-right (blue, purple, pink, red, amber, green, teal) |
 | Figure chrome | type label, copy/fit/full-screen/source buttons, 34 px toolbar, 16 px radius, rounded shapes (`rx: 9px`), soft drop shadow |
 | Lazy rendering | a block parked far from the viewport keeps its native code block (no figure, no hidden content); moving it within 400 px renders the figure to `ready` and hides the code block; both the `IntersectionObserver` path and the geometry fallback (`source=io` / `source=proximity`) were observed activating blocks |
-| Viewer resize | 1602×972 default panel with **8** grips; dragging the corner by −160×−100 px yields 1444×874; dragging the left edge out by 120 px moves the left edge to the window padding and widens to 1547; dragging the bottom-left corner by −100×+80 px grows the height to 958 and keeps the width clamped at the window limit; the size is stored and restored on reopen |
+| Viewer resize | 1602×982 default panel with **8** grips (window padding 19 px at 1920 px wide); corner drag −160×−100 shrinks to 1444×884; left-edge drag widens to 1566 with the left edge at 39; bottom-left drag reaches the 19 px padding with 1588×968; **double-click on the bar** fills to 1884×1013 (98vw×98vh) and a second double-click restores 1590×970; stored size reopens at 1590×970 |
 
 Known verification limits: the live checks were run in the dark theme; the light
 palette goes through the same token path but was not re-audited.

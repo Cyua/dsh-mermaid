@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 — 2026-11-16
+
+- The full-screen viewer leaves less empty space: the overlay gap is now 1vw/1vh
+  (was 3vw/3vh), so the panel can grow to 98vw×98vh, and the default size follows
+  that cap.
+- Double-click the viewer title bar to fill the window; double-click again (or
+  resize manually) to go back to the previous size.
+
 ## 0.5.1 — 2026-11-16
 
 - The viewer panel now resizes from **all** edges and corners (left, right, top,
