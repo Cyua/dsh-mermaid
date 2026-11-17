@@ -27,7 +27,10 @@ original Mermaid source stays one click away.
 - Viewport-lazy rendering: a diagram is rendered when it comes within 400 px of
   the viewport, so a long chat history does not pay for every diagram up front —
   faraway blocks keep their native code block until they approach the view.
-- Localized (English / 中文) through the DSH Client locale service.
+- Localized (English / 中文) through the DSH Client locale service. The client
+  bundle loads before that service on a cold start, so the translator is bound
+  through `ctx.inject(['locale'])` and already-rendered cards re-label when it
+  arrives (or when the language changes).
 - Streaming-aware: a block that changes while the answer streams re-renders when
   its text settles, and a block that cannot parse falls back to plain code.
 

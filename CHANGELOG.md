@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.3 — 2026-11-17
+
+- Fix the card and viewer falling back to English (`Sequence diagram`,
+  `Open full screen`, …) after a cold start. The client bundle is
+  `immediately: true` and can be evaluated before the locale service, so
+  binding the translator once at `apply` left the EN fallback until the plugin
+  was toggled. The translator is now bound through `ctx.inject(['locale'])` and
+  every visible card/viewer re-applies its labels on late binding and on
+  `locale/change`. Verified after re-applying: card shows `时序图` and
+  `复制源码 / 原始大小 / 另存为图片 / 全屏查看 / 查看源码`; the viewer shows
+  `缩小 / 放大 / 适应屏幕 / 适应宽度 / 原始大小 / 另存为图片 / 关闭`.
+
 ## 0.8.2 — 2026-11-16
 
 - Distribution: `npm run release:tgz` now produces only the installable tarball

@@ -716,7 +716,9 @@ function apply(ctx) {
 
   const state = {
     ctx,
-    t: createTranslator(ctx),
+    // Provisional English until the locale service is available; the real
+    // translator is bound below through ctx.inject.
+    t: (key) => EN_DICT[key] || key,
     records: new Map(),
     scanTimer: 0,
     queue: Promise.resolve(),
@@ -750,10 +752,27 @@ function apply(ctx) {
 
   const offTheme = ctx.on('theme/change', () => rerenderAll(state))
   const offLocale = ctx.on('locale/change', () => {
-    for (const [block, record] of state.records) {
-      if (block.isConnected && record.figure) updateLabels(state, record)
-    }
+    refreshLocalizedLabels(state)
   })
+
+  // On a cold start this Client bundle can be evaluated before the locale
+  // service (the bundle is `immediately: true`), which used to leave the whole
+  // card in English until the plugin was toggled. Bind through `ctx.inject` so
+  // the translator is installed as soon as the service exists.
+  const bindLocale = (scope) => {
+    if (state.disposed) return
+    state.t = createTranslator(scope || ctx)
+    refreshLocalizedLabels(state)
+  }
+  try {
+    if (typeof ctx.inject === 'function') {
+      ctx.inject(['locale'], (scope) => bindLocale(scope))
+    } else {
+      bindLocale(ctx)
+    }
+  } catch {
+    bindLocale(ctx)
+  }
 
   ctx.effect(() => {
     return () => {
@@ -2315,6 +2334,28 @@ function updateLabels(state, record) {
   record.figure.setAttribute('aria-label', state.t('brand') + ' · ' + typeName)
 }
 
+function refreshLocalizedLabels(state) {
+  for (const [block, record] of state.records) {
+    if (block.isConnected && record.figure) updateLabels(state, record)
+  }
+  refreshViewerLabels(state)
+}
+
+/** Re-apply localized titles to an open viewer (late locale binding / language switch). */
+function refreshViewerLabels(state) {
+  const overlay = state.viewer
+  const viewer = overlay && overlay.__dshMermaidViewer
+  if (!viewer) return
+  const title = overlay.querySelector('.dsh-mermaid-viewer-bar .dsh-mermaid-type')
+  if (title) title.textContent = state.t(typeLabelKey(viewer.record ? viewer.record.type || 'diagram' : 'diagram'))
+  for (const [button, key] of viewer.buttons || []) {
+    if (!button || button.isConnected === false) continue
+    const label = state.t(key)
+    button.title = label
+    button.setAttribute('aria-label', label)
+  }
+}
+
 function setStatusText(record, text) {
   if (!record.statusText) return
   record.statusText.textContent = text || ''
@@ -2786,6 +2827,15 @@ function openViewer(state, record) {
     scale: 1,
     mode: 'fit',
     restoreSize: null,
+    buttons: [
+      [zoomOut, 'zoomOut'],
+      [zoomIn, 'zoomIn'],
+      [fitScreen, 'fitScreen'],
+      [fitWidth, 'fitWidth'],
+      [actual, 'naturalSize'],
+      [saveImage, 'saveImage'],
+      [close, 'close'],
+    ],
   }
   state.viewer = overlay
   installViewerResize(state, overlay, panel, bar)
